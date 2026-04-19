@@ -1,0 +1,19 @@
+{
+  "name": "アパレルせどり管理",
+  "short_name": "在庫管理",
+  "description": "アパレルせどり在庫・売上管理ツール",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#4F46E5",
+  "orientation": "portrait",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

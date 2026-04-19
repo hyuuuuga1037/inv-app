@@ -1,0 +1,2154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>アパレルせどり管理</title>
+<meta name="theme-color" content="#4F46E5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="在庫管理">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+  :root {
+    --primary: #4F46E5;
+    --primary-light: #EEF2FF;
+    --primary-dark: #3730A3;
+    --success: #10B981;
+    --success-light: #D1FAE5;
+    --warning: #F59E0B;
+    --warning-light: #FEF3C7;
+    --danger: #EF4444;
+    --danger-light: #FEE2E2;
+    --gray-50: #F9FAFB;
+    --gray-100: #F3F4F6;
+    --gray-200: #E5E7EB;
+    --gray-300: #D1D5DB;
+    --gray-400: #9CA3AF;
+    --gray-500: #6B7280;
+    --gray-600: #4B5563;
+    --gray-700: #374151;
+    --gray-800: #1F2937;
+    --gray-900: #111827;
+    --nav-height: 60px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif;
+    background: var(--gray-50);
+    color: var(--gray-800);
+    min-height: 100vh;
+  }
+
+  /* Layout */
+  #app { display: flex; min-height: 100vh; }
+  #sidebar {
+    width: 220px; background: white; border-right: 1px solid var(--gray-200);
+    display: flex; flex-direction: column; position: fixed; top: 0; left: 0;
+    height: 100vh; z-index: 100;
+  }
+  #sidebar .logo {
+    padding: 20px 16px; border-bottom: 1px solid var(--gray-200);
+    font-size: 16px; font-weight: 700; color: var(--primary);
+    display: flex; align-items: center; gap: 8px;
+  }
+  #sidebar nav { padding: 12px 8px; flex: 1; }
+  #sidebar nav a {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border-radius: 8px; text-decoration: none; color: var(--gray-600);
+    font-size: 14px; font-weight: 500; margin-bottom: 2px; transition: all 0.15s;
+  }
+  #sidebar nav a:hover { background: var(--gray-100); color: var(--gray-900); }
+  #sidebar nav a.active { background: var(--primary-light); color: var(--primary); }
+  #sidebar nav a .icon { font-size: 18px; width: 22px; text-align: center; }
+  #main { margin-left: 220px; flex: 1; padding: 24px; max-width: calc(100% - 220px); }
+  #page-header {
+    margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between;
+  }
+  #page-header h1 { font-size: 22px; font-weight: 700; color: var(--gray-900); }
+
+  /* Mobile nav */
+  #mobile-nav {
+    display: none; position: fixed; bottom: 0; left: 0; right: 0;
+    background: white; border-top: 1px solid var(--gray-200);
+    height: var(--nav-height); z-index: 100; padding: 0 4px;
+    justify-content: space-around; align-items: center;
+  }
+  #mobile-nav a {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    text-decoration: none; color: var(--gray-400); font-size: 10px;
+    padding: 8px 4px; border-radius: 8px; min-width: 48px; transition: all 0.15s;
+  }
+  #mobile-nav a .icon { font-size: 20px; }
+  #mobile-nav a.active { color: var(--primary); }
+
+  @media (max-width: 768px) {
+    #sidebar { display: none; }
+    #main { margin-left: 0; padding: 16px; max-width: 100%; padding-bottom: calc(var(--nav-height) + 16px); }
+    #mobile-nav { display: flex; }
+    #page-header h1 { font-size: 18px; }
+  }
+
+  /* Cards */
+  .card {
+    background: white; border-radius: 12px; border: 1px solid var(--gray-200);
+    padding: 20px; margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 14px; font-weight: 600; color: var(--gray-500);
+    margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat-card {
+    background: white; border-radius: 12px; border: 1px solid var(--gray-200);
+    padding: 16px 20px;
+  }
+  .stat-label { font-size: 12px; color: var(--gray-500); margin-bottom: 4px; }
+  .stat-value { font-size: 22px; font-weight: 700; color: var(--gray-900); }
+  .stat-value.green { color: var(--success); }
+  .stat-value.blue { color: var(--primary); }
+  .stat-sub { font-size: 12px; color: var(--gray-400); margin-top: 2px; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+    border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+    border: none; transition: all 0.15s; text-decoration: none;
+  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-success { background: var(--success); color: white; }
+  .btn-success:hover { background: #059669; }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-outline {
+    background: white; color: var(--gray-700); border: 1px solid var(--gray-300);
+  }
+  .btn-outline:hover { background: var(--gray-50); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-icon { padding: 8px; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    background: var(--gray-50); padding: 10px 12px; text-align: left;
+    font-size: 11px; font-weight: 600; color: var(--gray-500);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--gray-200); white-space: nowrap;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .table-scroll {
+    max-height: calc(100vh - 190px); overflow-y: auto; overflow-x: auto;
+  }
+  tbody td {
+    padding: 7px 10px; border-bottom: 1px solid var(--gray-100);
+    color: var(--gray-700); white-space: nowrap;
+  }
+  tbody tr:hover { background: var(--gray-50); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  /* Badges */
+  .badge {
+    display: inline-flex; align-items: center; padding: 2px 8px;
+    border-radius: 99px; font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+  .badge-unlisted { background: var(--gray-100); color: var(--gray-600); }
+  .badge-listed { background: var(--warning-light); color: #92400E; }
+  .badge-sold { background: var(--success-light); color: #065F46; }
+  .badge-mercari { background: #FF4045; color: white; }
+  .badge-yahoo { background: #FF0026; color: white; }
+  .badge-rakuma { background: #FF5A5F; color: white; }
+  .badge-yahuoku { background: #F5A623; color: white; }
+  .badge-platform { background: var(--primary-light); color: var(--primary); }
+
+  /* Forms */
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label { font-size: 13px; font-weight: 500; color: var(--gray-700); }
+  .form-group input, .form-group select, .form-group textarea {
+    padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 8px;
+    font-size: 14px; outline: none; transition: border-color 0.15s;
+    background: white; color: var(--gray-800); font-family: inherit;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    border-color: var(--primary);
+  }
+  .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+  /* Filters */
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .filters select, .filters input {
+    padding: 7px 12px; border: 1px solid var(--gray-200); border-radius: 8px;
+    font-size: 13px; background: white; outline: none;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 200; align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: white; border-radius: 16px; width: 100%; max-width: 560px;
+    max-height: 90vh; overflow-y: auto; padding: 24px;
+  }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .modal-header h2 { font-size: 18px; font-weight: 700; }
+  .modal-close {
+    background: var(--gray-100); border: none; border-radius: 8px;
+    width: 32px; height: 32px; cursor: pointer; font-size: 16px;
+  }
+
+  /* Monthly table */
+  .monthly-table-wrap { overflow-x: auto; }
+  .monthly-table { min-width: 700px; }
+  .monthly-table td { text-align: left; padding: 10px 12px; font-size: 13px; }
+  .monthly-table td:first-child { text-align: left; font-weight: 600; color: var(--gray-700); }
+  .monthly-table tr.profit td { color: var(--success); font-weight: 700; }
+  .monthly-table thead th { text-align: left; }
+  .monthly-table thead th:first-child { text-align: left; }
+
+  /* Empty state */
+  .empty {
+    text-align: center; padding: 48px 20px; color: var(--gray-400);
+  }
+  .empty .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .empty p { font-size: 14px; }
+
+  /* Tag pills for platform */
+  .platform-merc { background: #FECDD3; color: #9F1239; }
+  .platform-yahoo { background: #FEF3C7; color: #92400E; }
+  .platform-raku { background: #FCE7F3; color: #9D174D; }
+  .platform-yahuoku { background: #FEF9C3; color: #713F12; }
+
+  /* Toast */
+  #toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--gray-900); color: white; padding: 10px 20px; border-radius: 8px;
+    font-size: 14px; opacity: 0; transition: all 0.3s; z-index: 300; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Year selector */
+  .year-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .year-tab {
+    padding: 6px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--gray-200); background: white; color: var(--gray-500);
+  }
+  .year-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+  .year-nav-btn {
+    padding: 6px 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--gray-200); background: white; color: var(--gray-600);
+    flex-shrink: 0;
+  }
+  .year-nav-btn:hover { background: var(--gray-100); }
+
+  /* Profit positive/negative */
+  .profit-pos { color: var(--success); font-weight: 600; }
+  .profit-neg { color: var(--danger); font-weight: 600; }
+
+  /* Section divider */
+  .section-divider {
+    height: 1px; background: var(--gray-200); margin: 20px 0;
+  }
+
+  /* Summary row in stats */
+  .summary-bar {
+    background: white; border-radius: 12px; border: 1px solid var(--gray-200);
+    padding: 12px 20px; display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 20px;
+  }
+  .summary-item { display: flex; flex-direction: column; gap: 2px; }
+  .summary-item .s-label { font-size: 11px; color: var(--gray-400); }
+  .summary-item .s-value { font-size: 15px; font-weight: 700; color: var(--gray-800); }
+
+  /* Delete confirm */
+  .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--gray-200); }
+  .tab-btn {
+    padding: 8px 16px; font-size: 14px; font-weight: 500; cursor: pointer;
+    border: none; background: none; color: var(--gray-500); border-bottom: 2px solid transparent;
+    margin-bottom: -2px; transition: all 0.15s;
+  }
+  .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+  /* Inline edit highlight */
+  .edited-row { background: #FFF9C4 !important; }
+
+  /* Settings list */
+  .settings-list { list-style: none; }
+  .settings-list li {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; border-radius: 8px; margin-bottom: 4px;
+    background: var(--gray-50); font-size: 14px;
+  }
+  .add-tag-row { display: flex; gap: 8px; margin-top: 8px; }
+  .add-tag-row input { flex: 1; padding: 7px 12px; border: 1px solid var(--gray-200); border-radius: 8px; font-size: 14px; outline:none; }
+
+  /* Bundle / まとめ売り */
+  .badge-bundle { background: #E0E7FF; color: #3730A3; cursor:pointer; }
+  .badge-bundle:hover { background: #C7D2FE; }
+  input[type="checkbox"].row-check { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
+  .selection-bar {
+    position: fixed; bottom: 16px; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--gray-900); color: white; padding: 12px 20px;
+    border-radius: 14px; display: flex; align-items: center; gap: 14px;
+    z-index: 150; box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    white-space: nowrap; transition: transform 0.25s ease;
+  }
+  .selection-bar.show { transform: translateX(-50%) translateY(0); }
+  @media (max-width: 768px) {
+    .selection-bar { bottom: calc(var(--nav-height) + 8px); }
+  }
+  .sel-count { font-size: 13px; color: #A5B4FC; }
+  .bundle-items-list { margin: 12px 0; }
+  .bundle-item-row {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--gray-50); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .bundle-item-row .item-name { font-weight: 600; color: var(--gray-800); }
+  .bundle-item-row .item-sub { color: var(--gray-400); font-size: 11px; }
+  .bundle-item-row .item-share { color: var(--primary); font-weight: 700; font-size: 13px; }
+  .bundle-calc-box {
+    background: var(--primary-light); border-radius: 10px;
+    padding: 12px 16px; margin-top: 14px; font-size: 14px;
+  }
+  .bundle-calc-row { display: flex; justify-content: space-between; padding: 3px 0; }
+  .bundle-calc-row.total { border-top: 1px solid var(--gray-200); margin-top: 6px; padding-top: 8px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="logo">👔 せどり管理</div>
+    <nav>
+      <a href="#" class="nav-link active" data-page="dashboard">
+        <span class="icon">📊</span> ダッシュボード
+      </a>
+      <a href="#" class="nav-link" data-page="inventory">
+        <span class="icon">📦</span> 在庫一覧
+      </a>
+      <a href="#" class="nav-link" data-page="add">
+        <span class="icon">➕</span> 商品登録
+      </a>
+      <a href="#" class="nav-link" data-page="sell">
+        <span class="icon">💰</span> 売却記録
+      </a>
+      <a href="#" class="nav-link" data-page="settings">
+        <span class="icon">⚙️</span> 設定
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <main id="main">
+    <div id="page-header">
+      <h1 id="page-title">ダッシュボード</h1>
+      <div id="header-actions"></div>
+    </div>
+    <div id="content"></div>
+  </main>
+
+  <!-- Mobile nav -->
+  <nav id="mobile-nav">
+    <a href="#" class="nav-link active" data-page="dashboard">
+      <span class="icon">📊</span>集計
+    </a>
+    <a href="#" class="nav-link" data-page="inventory">
+      <span class="icon">📦</span>在庫
+    </a>
+    <a href="#" class="nav-link" data-page="add">
+      <span class="icon">➕</span>登録
+    </a>
+    <a href="#" class="nav-link" data-page="sell">
+      <span class="icon">💰</span>売却
+    </a>
+    <a href="#" class="nav-link" data-page="settings">
+      <span class="icon">⚙️</span>設定
+    </a>
+  </nav>
+</div>
+
+<!-- Sell Modal -->
+<div class="modal-overlay" id="sell-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>売却記録</h2>
+      <button class="modal-close" onclick="closeSellModal()">✕</button>
+    </div>
+    <div id="sell-modal-body"></div>
+  </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal-overlay" id="delete-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>削除確認</h2>
+      <button class="modal-close" onclick="closeDeleteModal()">✕</button>
+    </div>
+    <p style="color:var(--gray-600);font-size:14px;">この商品を削除してよろしいですか？この操作は元に戻せません。</p>
+    <div class="confirm-actions">
+      <button class="btn btn-outline" onclick="closeDeleteModal()">キャンセル</button>
+      <button class="btn btn-danger" id="confirm-delete-btn">削除する</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>商品編集</h2>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div id="edit-modal-body"></div>
+  </div>
+</div>
+
+<!-- Bundle Sale Modal -->
+<div class="modal-overlay" id="bundle-modal">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <h2>📦 まとめ売り記録</h2>
+      <button class="modal-close" onclick="closeBundleModal()">✕</button>
+    </div>
+    <div id="bundle-modal-body"></div>
+  </div>
+</div>
+
+<!-- Withdraw Modal -->
+<div class="modal-overlay" id="withdraw-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h2>⚠️ 出品取り下げ</h2>
+      <button class="modal-close" onclick="closeWithdrawModal()">✕</button>
+    </div>
+    <div id="withdraw-modal-body"></div>
+  </div>
+</div>
+
+<!-- Selection Bar -->
+<div class="selection-bar" id="selection-bar">
+  <span class="sel-count" id="sel-count-label">0件選択中</span>
+  <button class="btn btn-success btn-sm" id="sel-bundle-btn" onclick="openBundleSellModal()">📦 まとめ売り</button>
+  <button class="btn btn-sm" style="background:#6366F1;color:white" onclick="openBulkSoldModal()">✅ 売却済みにする</button>
+  <button class="btn btn-outline btn-sm" style="color:white;border-color:rgba(255,255,255,0.3)" onclick="clearSelection()">✕ 解除</button>
+</div>
+
+<!-- Bulk Sold Modal -->
+<div class="modal-overlay" id="bulk-sold-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h2>✅ 売却済みにする</h2>
+      <button class="modal-close" onclick="closeBulkSoldModal()">✕</button>
+    </div>
+    <div id="bulk-sold-body"></div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-header">
+      <h2>📤 CSVインポート</h2>
+      <button class="modal-close" onclick="closeImportModal()">✕</button>
+    </div>
+    <div id="import-body">
+      <!-- Step 1: File select -->
+      <div id="import-step1">
+        <div style="background:var(--primary-light);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:1.7">
+          <strong>📋 CSVの出力手順：</strong><br>
+          ① Googleスプレッドシートの「<strong>取引データ</strong>」シートを開く<br>
+          ② メニュー「ファイル」→「ダウンロード」→「<strong>カンマ区切り形式（.csv）</strong>」<br>
+          ③ ダウンロードされたCSVファイルを下のボタンで選択
+        </div>
+        <div style="border:2px dashed var(--gray-300);border-radius:12px;padding:32px;text-align:center;cursor:pointer" onclick="document.getElementById('csv-file-input').click()">
+          <div style="font-size:36px;margin-bottom:8px">📂</div>
+          <div style="font-size:14px;color:var(--gray-500)">クリックしてCSVファイルを選択</div>
+          <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="handleCSVFile(this)">
+        </div>
+      </div>
+      <!-- Step 2: Preview & confirm -->
+      <div id="import-step2" style="display:none">
+        <div id="import-summary"></div>
+        <div id="import-preview-table" style="max-height:300px;overflow-y:auto;margin:12px 0"></div>
+        <div style="background:var(--warning-light);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">
+          ⚠️ <strong>注意：</strong>「販売先」列はスプレッドシートにないため、売却済み商品の販売先は空欄になります。インポート後に在庫一覧から編集できます。
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-outline" onclick="resetImport()">← 戻る</button>
+          <button class="btn btn-primary" id="import-exec-btn">✅ インポート実行</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ==================== SHIPPING MASTER ====================
+const SHIPPING_DATA = [
+  // らくらくメルカリ便
+  { label: 'ネコポス',     group: 'らくらくメルカリ便', fee: 210,  box: 0,  size: 'A4・厚3cm・1kg以内' },
+  { label: 'コンパクト',   group: 'らくらくメルカリ便', fee: 450,  box: 70, size: '縦20×横25×高5cm' },
+  { label: '宅急60',       group: 'らくらくメルカリ便', fee: 750,  box: 0,  size: '60サイズ〜2kg' },
+  { label: '宅急80',       group: 'らくらくメルカリ便', fee: 850,  box: 0,  size: '80サイズ〜5kg' },
+  { label: '宅急100',      group: 'らくらくメルカリ便', fee: 1050, box: 0,  size: '100サイズ〜10kg' },
+  { label: '宅急120',      group: 'らくらくメルカリ便', fee: 1200, box: 0,  size: '120サイズ〜15kg' },
+  { label: '宅急140',      group: 'らくらくメルカリ便', fee: 1450, box: 0,  size: '140サイズ〜20kg' },
+  { label: '宅急160',      group: 'らくらくメルカリ便', fee: 1700, box: 0,  size: '160サイズ〜25kg' },
+  // ゆうゆうメルカリ便
+  { label: 'ゆうパケット',       group: 'ゆうゆうメルカリ便', fee: 230,  box: 0,  size: 'A4・厚3cm・1kg以内' },
+  { label: 'ゆうパケットポスト', group: 'ゆうゆうメルカリ便', fee: 215,  box: 65, size: 'A4・厚3cm・2kg以内' },
+  { label: 'ゆうパケットプラス', group: 'ゆうゆうメルカリ便', fee: 455,  box: 65, size: '厚7cm・2kg以内' },
+  { label: 'ポストmini',         group: 'ゆうゆうメルカリ便', fee: 160,  box: 20, size: '' },
+  { label: 'ゆうパック60',       group: 'ゆうゆうメルカリ便', fee: 770,  box: 0,  size: '60サイズ〜25kg' },
+  { label: 'ゆうパック80',       group: 'ゆうゆうメルカリ便', fee: 870,  box: 0,  size: '80サイズ〜25kg' },
+  { label: 'ゆうパック100',      group: 'ゆうゆうメルカリ便', fee: 1070, box: 0,  size: '100サイズ〜25kg' },
+  { label: 'エコメルカリ便',     group: 'ゆうゆうメルカリ便', fee: 730,  box: 0,  size: '' },
+];
+
+// よく使う配送方法
+const FREQUENT_SHIPPING = ['ゆうパケットポスト','宅急60','宅急80','宅急100','エコメルカリ便'];
+
+// 配送方法セレクトのHTML（よく使う→その他の順）
+function shippingSelectOptions(selectedLabel) {
+  const frequent = SHIPPING_DATA.filter(d => FREQUENT_SHIPPING.includes(d.label));
+  const others = SHIPPING_DATA.filter(d => !FREQUENT_SHIPPING.includes(d.label));
+  const otherGroups = [...new Set(others.map(d=>d.group))];
+  const opt = d =>
+    `<option value="${d.label}" ${selectedLabel===d.label?'selected':''}>${d.label}（¥${d.fee.toLocaleString()}${d.box?'＋専用箱¥'+d.box:''}）${d.size?'　'+d.size:''}</option>`;
+  return `<option value="">選択してください</option>` +
+    `<optgroup label="★ よく使う">` + frequent.map(opt).join('') + `</optgroup>` +
+    otherGroups.map(g =>
+      `<optgroup label="${g}">` + others.filter(d=>d.group===g).map(opt).join('') + `</optgroup>`
+    ).join('');
+}
+
+// 販売先に応じたデフォルト手数料率
+const PLATFORM_COMMISSION = { 'メルカリ': 10, 'ヤフーフリマ': 5 };
+
+// 手数料率セレクトのHTML
+function commissionRateOptions(selectedRate) {
+  const rates = [10,9,8,7,6,5];
+  return `<option value="">選択</option>` +
+    rates.map(r => `<option value="${r}" ${selectedRate==r?'selected':''}>${r}%</option>`).join('');
+}
+
+// ==================== DATA LAYER ====================
+const DB_KEY = 'apparel_items';
+const SETTINGS_KEY = 'apparel_settings';
+
+const DEFAULT_SETTINGS = {
+  purchaseSources: [
+    'セカンドストリート', 'オフハウス', 'トレジャーファクトリー',
+    'ベクトルパーク', 'エコリング', 'ユーズレット', 'ゾゾタウン', 'メルカリ'
+  ],
+  platforms: ['メルカリ', 'ヤフーフリマ', 'ラクマ', 'ヤフオク'],
+  genres: ['スーツ', '洋服', 'デニム', 'ジャージ', '靴', 'バッグ', 'アクセサリー', 'その他'],
+  shippingMethods: ['ゆうパック60', 'ゆうパック80', 'ゆうパック100', '宅急便60', '宅急便80', '宅急便100', 'らくらくメルカリ便', 'ゆうゆうメルカリ便', 'その他']
+};
+
+function getSettings() {
+  const s = localStorage.getItem(SETTINGS_KEY);
+  if (!s) return DEFAULT_SETTINGS;
+  const saved = JSON.parse(s);
+  return {
+    purchaseSources: saved.purchaseSources || DEFAULT_SETTINGS.purchaseSources,
+    platforms: saved.platforms || DEFAULT_SETTINGS.platforms,
+    genres: saved.genres ? (saved.genres.includes('ジャージ') ? saved.genres : [...saved.genres.slice(0, 3), 'ジャージ', ...saved.genres.slice(3)]) : DEFAULT_SETTINGS.genres,
+    shippingMethods: saved.shippingMethods || DEFAULT_SETTINGS.shippingMethods
+  };
+}
+function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+
+function getItems() {
+  const d = localStorage.getItem(DB_KEY);
+  return d ? JSON.parse(d) : [];
+}
+function saveItems(items) { localStorage.setItem(DB_KEY, JSON.stringify(items)); }
+
+function nextNo() {
+  const items = getItems();
+  if (items.length === 0) return 1;
+  return Math.max(...items.map(i => i.no || 0)) + 1;
+}
+
+function calcItem(item) {
+  if (!item.salePrice) return { ...item, totalCost: (item.purchasePrice || 0) + (item.extraCost || 0), profit: null, profitRate: null };
+  const tc = (item.purchasePrice || 0) + (item.extraCost || 0) + (item.commission || 0) + (item.shippingCost || 0) + (item.boxCost || 0);
+  const profit = (item.salePrice || 0) - tc;
+  const profitRate = item.salePrice ? (profit / item.salePrice * 100) : null;
+  return { ...item, totalCost: tc, profit, profitRate };
+}
+
+// ==================== TOAST ====================
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ==================== NAVIGATION ====================
+let currentPage = 'dashboard';
+document.querySelectorAll('.nav-link').forEach(link => {
+  link.addEventListener('click', e => {
+    e.preventDefault();
+    navigateTo(link.dataset.page);
+  });
+});
+
+function navigateTo(page) {
+  currentPage = page;
+  document.querySelectorAll('.nav-link').forEach(l => {
+    l.classList.toggle('active', l.dataset.page === page);
+  });
+  const titles = {
+    dashboard: 'ダッシュボード',
+    inventory: '在庫一覧',
+    add: '商品登録',
+    sell: '売却記録',
+    settings: '設定'
+  };
+  document.getElementById('page-title').textContent = titles[page] || '';
+  const ha = document.getElementById('header-actions');
+  ha.innerHTML = '';
+  renderPage(page);
+}
+
+function renderPage(page) {
+  const content = document.getElementById('content');
+  if (page === 'dashboard') renderDashboard(content);
+  else if (page === 'inventory') renderInventory(content);
+  else if (page === 'add') renderAdd(content);
+  else if (page === 'sell') renderSellList(content);
+  else if (page === 'settings') renderSettings(content);
+}
+
+// ==================== DASHBOARD ====================
+let _dashYears = [];
+let _dashActiveYear = '';
+
+function renderDashboard(el) {
+  const items = getItems();
+  // purchaseDate・saleDate両方から年を収集（YYYY-MM-DD形式のみ）
+  const yearSet = new Set();
+  items.forEach(i => {
+    if (i.purchaseDate && /^\d{4}-/.test(i.purchaseDate)) yearSet.add(i.purchaseDate.slice(0,4));
+    if (i.saleDate     && /^\d{4}-/.test(i.saleDate))     yearSet.add(i.saleDate.slice(0,4));
+  });
+  const currentYear = new Date().getFullYear().toString();
+  yearSet.add(currentYear);
+  _dashYears = [...yearSet].sort((a,b) => b-a);
+
+  // 売上データのある最新年をデフォルトに
+  const soldYears = [...new Set(items.filter(i=>i.saleDate).map(i=>i.saleDate.slice(0,4)))].sort((a,b)=>b-a);
+  _dashActiveYear = soldYears[0] || currentYear;
+
+  const allSold = items.filter(i => i.status === 'sold');
+  const totalProfit = allSold.reduce((s, i) => s + (calcItem(i).profit || 0), 0);
+  const totalSale = allSold.reduce((s, i) => s + (i.salePrice || 0), 0);
+  const totalPurchase = items.reduce((s, i) => s + (i.purchasePrice || 0), 0);
+  const inStock = items.filter(i => i.status !== 'sold').length;
+
+  el.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">累計売上</div>
+        <div class="stat-value blue">¥${fmt(totalSale)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">累計利益</div>
+        <div class="stat-value green">¥${fmt(totalProfit)}</div>
+        <div class="stat-sub">${totalSale ? (totalProfit/totalSale*100).toFixed(1)+'%' : '-'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">累計仕入れ</div>
+        <div class="stat-value">¥${fmt(totalPurchase)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">在庫数</div>
+        <div class="stat-value">${inStock}<span style="font-size:14px;color:var(--gray-400)"> 点</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">月別集計</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="year-nav-btn" onclick="shiftYear(-1)">◀</button>
+        <div class="year-tabs" id="year-tabs" style="margin-bottom:0;flex-wrap:wrap">
+          ${_dashYears.map(y => `<button class="year-tab${y===_dashActiveYear?' active':''}" onclick="switchYear('${y}')">${y}年</button>`).join('')}
+        </div>
+        <button class="year-nav-btn" onclick="shiftYear(1)">▶</button>
+      </div>
+      <div id="monthly-table-area"></div>
+    </div>
+    <div class="card" style="margin-top:0">
+      <div class="card-title">販売先別 売上</div>
+      <div id="platform-stats"></div>
+    </div>
+  `;
+
+  renderMonthlyTable(_dashActiveYear, items);
+  renderPlatformStats(items);
+}
+
+function switchYear(year) {
+  _dashActiveYear = year;
+  document.querySelectorAll('.year-tab').forEach(t => t.classList.toggle('active', t.textContent===year+'年'));
+  renderMonthlyTable(year, getItems());
+}
+
+function shiftYear(dir) {
+  // dir: -1=古い年へ, 1=新しい年へ (_dashYears は降順)
+  const idx = _dashYears.indexOf(_dashActiveYear);
+  const next = idx - dir; // 降順なので符号反転
+  if (next >= 0 && next < _dashYears.length) switchYear(_dashYears[next]);
+}
+
+function renderMonthlyTable(year, items) {
+  const months = Array.from({length:12},(_,i)=>i+1);
+
+  const getMonthData = m => {
+    const prefix = `${year}-${String(m).padStart(2,'0')}`;
+    const sold   = items.filter(i=>i.saleDate&&i.saleDate.startsWith(prefix));
+    const bought = items.filter(i=>i.purchaseDate&&i.purchaseDate.startsWith(prefix));
+    const sales   = sold.reduce((s,i)=>s+(i.salePrice||0),0);
+    const profit  = sold.reduce((s,i)=>s+(calcItem(i).profit||0),0);
+    const purchase= bought.reduce((s,i)=>s+(i.purchasePrice||0),0);
+    const profitRate = sales ? profit/sales*100 : null;
+    return { sales, profit, purchase, profitRate, soldCount:sold.length, boughtCount:bought.length };
+  };
+
+  const data = months.map(getMonthData);
+  const tot = {
+    sales:      data.reduce((s,d)=>s+d.sales,0),
+    profit:     data.reduce((s,d)=>s+d.profit,0),
+    purchase:   data.reduce((s,d)=>s+d.purchase,0),
+    soldCount:  data.reduce((s,d)=>s+d.soldCount,0),
+    boughtCount:data.reduce((s,d)=>s+d.boughtCount,0),
+  };
+  const validRates = data.filter(d=>d.profitRate!==null);
+  const avgRate = validRates.length ? validRates.reduce((s,d)=>s+d.profitRate,0)/validRates.length : null;
+
+  const rows = data.map((d,i) => {
+    const hasData = d.sales || d.soldCount;
+    if (!hasData) return `<tr style="color:var(--gray-300)">
+      <td style="font-weight:600">${i+1}月</td>
+      <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+    </tr>`;
+    return `<tr>
+      <td style="font-weight:600;color:var(--gray-800)">${i+1}月</td>
+      <td>¥${fmt(d.sales)}</td>
+      <td class="${d.profit>=0?'profit-pos':'profit-neg'}">¥${fmt(d.profit)}</td>
+      <td>${d.profitRate!==null?d.profitRate.toFixed(1)+'%':'-'}</td>
+      <td>${d.soldCount}件</td>
+      <td>${d.boughtCount||'-'}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('monthly-table-area').innerHTML = `
+    <table class="monthly-table" style="width:100%">
+      <thead><tr>
+        <th style="text-align:left;width:48px">月</th>
+        <th>売上額</th><th>利益額</th><th>利益率</th><th>取引件数</th><th>仕入個数</th>
+      </tr></thead>
+      <tbody>
+        ${rows}
+        <tr style="border-top:2px solid var(--gray-200)">
+          <td style="font-weight:700">年間合計</td>
+          <td style="font-weight:700">¥${fmt(tot.sales)}</td>
+          <td style="font-weight:700" class="${tot.profit>=0?'profit-pos':'profit-neg'}">¥${fmt(tot.profit)}</td>
+          <td style="font-weight:700">${avgRate!==null?avgRate.toFixed(1)+'%':'-'}</td>
+          <td style="font-weight:700">${tot.soldCount}件</td>
+          <td style="font-weight:700">${tot.boughtCount}件</td>
+        </tr>
+      </tbody>
+    </table>`;
+}
+
+function renderPlatformStats(items) {
+  const sold = items.filter(i=>i.status==='sold');
+  const platforms = [...new Set(sold.map(i=>i.platform).filter(Boolean))];
+  if (!platforms.length) {
+    document.getElementById('platform-stats').innerHTML = '<div class="empty"><p>売却データなし</p></div>';
+    return;
+  }
+  const stats = platforms.map(p => {
+    const ps = sold.filter(i=>i.platform===p);
+    const sales = ps.reduce((s,i)=>s+(i.salePrice||0),0);
+    const profit = ps.reduce((s,i)=>s+(calcItem(i).profit||0),0);
+    return { p, count: ps.length, sales, profit };
+  }).sort((a,b)=>b.sales-a.sales);
+
+  document.getElementById('platform-stats').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      ${stats.map(s=>`
+        <div style="background:var(--gray-50);border-radius:10px;padding:12px 14px">
+          <div style="font-size:12px;font-weight:700;color:var(--gray-500);margin-bottom:6px">${s.p}</div>
+          <div style="font-size:18px;font-weight:700;color:var(--primary)">¥${fmt(s.sales)}</div>
+          <div style="font-size:12px;color:var(--success);font-weight:600">利益 ¥${fmt(s.profit)}</div>
+          <div style="font-size:11px;color:var(--gray-400)">${s.count}件</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ==================== SELECTION (まとめ売り) ====================
+let selectedItems = new Set();
+
+function toggleItemSelect(id) {
+  if (selectedItems.has(id)) selectedItems.delete(id);
+  else selectedItems.add(id);
+  updateSelectionBar();
+}
+function clearSelection() {
+  selectedItems.clear();
+  updateSelectionBar();
+  // uncheck all checkboxes
+  document.querySelectorAll('.row-check').forEach(cb => cb.checked = false);
+}
+function updateSelectionBar() {
+  const bar = document.getElementById('selection-bar');
+  const label = document.getElementById('sel-count-label');
+  const bundleBtn = document.getElementById('sel-bundle-btn');
+  if (!bar) return;
+  if (selectedItems.size >= 1) {
+    bar.classList.add('show');
+    label.textContent = `${selectedItems.size}件選択中`;
+    // まとめ売りは2件以上のみ
+    if (bundleBtn) bundleBtn.style.display = selectedItems.size >= 2 ? '' : 'none';
+  } else {
+    bar.classList.remove('show');
+  }
+}
+
+// ==================== INVENTORY ====================
+let invFilters = { status: '', genre: '', platform: '', q: '' };
+
+function renderInventory(el) {
+  const settings = getSettings();
+  el.innerHTML = `
+    <div class="filters">
+      <input type="text" placeholder="🔍 ブランド・商品名で検索" id="inv-q" value="${invFilters.q}" oninput="invFilters.q=this.value;renderInventoryTable()" style="min-width:180px">
+      <select id="inv-status" onchange="invFilters.status=this.value;renderInventoryTable()">
+        <option value="">全ステータス</option>
+        <option value="unlisted" ${invFilters.status==='unlisted'?'selected':''}>未出品</option>
+        <option value="listed" ${invFilters.status==='listed'?'selected':''}>出品中</option>
+        <option value="sold" ${invFilters.status==='sold'?'selected':''}>売却済み</option>
+      </select>
+      <select id="inv-genre" onchange="invFilters.genre=this.value;renderInventoryTable()">
+        <option value="">全ジャンル</option>
+        ${settings.genres.map(g=>`<option value="${g}" ${invFilters.genre===g?'selected':''}>${g}</option>`).join('')}
+      </select>
+      <select id="inv-platform" onchange="invFilters.platform=this.value;renderInventoryTable()">
+        <option value="">全販売先</option>
+        ${settings.platforms.map(p=>`<option value="${p}" ${invFilters.platform===p?'selected':''}>${p}</option>`).join('')}
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="exportCSV()">📥 CSV出力</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="table-scroll" id="inv-table-area"></div>
+    </div>
+  `;
+  renderInventoryTable();
+}
+
+function renderInventoryTable() {
+  let items = getItems();
+  const f = invFilters;
+  if (f.status) items = items.filter(i=>(i.status||'unlisted')===f.status);
+  if (f.genre) items = items.filter(i=>i.genre===f.genre);
+  if (f.platform) items = items.filter(i=>i.platform===f.platform);
+  if (f.q) {
+    const q = f.q.toLowerCase();
+    items = items.filter(i=>(i.brand||'').toLowerCase().includes(q)||(i.details||'').toLowerCase().includes(q));
+  }
+  items = items.slice().sort((a,b)=>b.no-a.no);
+
+  const area = document.getElementById('inv-table-area');
+  if (!area) return;
+  if (!items.length) {
+    area.innerHTML = '<div class="empty"><div class="empty-icon">📦</div><p>該当する商品がありません</p></div>';
+    return;
+  }
+
+  area.innerHTML = `<table style="width:100%;border-collapse:collapse">
+    <thead>
+      <tr>
+        <th style="width:32px"></th>
+        <th>No</th><th>ステータス</th><th>ジャンル</th><th style="width:120px">ブランド</th>
+        <th style="min-width:200px">商品詳細</th><th>サイズ</th><th>仕入値</th><th style="width:90px">仕入れ先</th>
+        <th>仕入日</th><th>販売先</th><th>販売額</th><th>利益</th><th>利益率</th>
+        <th style="text-align:center">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${items.map(item => {
+        const c = calcItem(item);
+        const st = item.status || 'unlisted';
+        const stLabel = {unlisted:'未出品', listed:'出品中', sold:'売却済み'}[st];
+        const stClass = {unlisted:'badge-unlisted', listed:'badge-listed', sold:'badge-sold'}[st];
+        const isSelectable = st !== 'sold';
+        const isChecked = selectedItems.has(item.id);
+        const bundleBadge = item.bundleId
+          ? `<span class="badge badge-bundle" title="まとめ売りID:${item.bundleId}" onclick="showBundleGroup('${item.bundleId}')">まとめ</span> `
+          : '';
+        return `<tr${isChecked?' style="background:var(--primary-light)"':''}>
+          <td style="text-align:center">
+            ${isSelectable ? `<input type="checkbox" class="row-check" ${isChecked?'checked':''} onchange="toggleItemSelect(${item.id})" onclick="event.stopPropagation()">` : ''}
+          </td>
+          <td>${item.no}</td>
+          <td>${bundleBadge}<span class="badge ${stClass}" ${st!=='sold'?`onclick="toggleListedStatus(${item.id})" style="cursor:pointer" title="${st==='unlisted'?'タップで出品中に変更':'タップで未出品に変更'}"`:``}>${stLabel}</span></td>
+          <td>${item.genre||'-'}</td>
+          <td style="font-weight:600;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.brand||'-'}</td>
+          <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${item.details||'-'}</td>
+          <td>${item.size||'-'}</td>
+          <td>¥${fmt(item.purchasePrice||0)}${item.extraCost ? `<br><small style="color:var(--danger);font-size:11px">+取下げ¥${fmt(item.extraCost)}</small>` : ''}</td>
+          <td style="font-size:12px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.purchaseSource||''}">${item.purchaseSource||'-'}</td>
+          <td style="font-size:12px">${item.purchaseDate||'-'}</td>
+          <td>${item.platform ? `<span class="badge badge-platform">${item.platform}</span>` : '-'}</td>
+          <td>${item.salePrice ? '¥'+fmt(item.salePrice) : '-'}</td>
+          <td class="${c.profit!=null?(c.profit>=0?'profit-pos':'profit-neg'):''}">${c.profit!=null?'¥'+fmt(c.profit):'-'}</td>
+          <td>${c.profitRate!=null?c.profitRate.toFixed(1)+'%':'-'}</td>
+          <td style="text-align:center;white-space:nowrap">
+            ${st!=='sold'?`<button class="btn btn-success btn-sm" onclick="openSellModal(${item.id})">売却</button> `:''}
+            ${st==='unlisted'?`<button class="btn btn-sm" style="background:var(--primary);color:white" onclick="setListed(${item.id})">出品</button> `:''}
+            ${st==='listed'?`<button class="btn btn-sm" style="background:var(--warning);color:white" onclick="openWithdrawModal(${item.id})">取下げ</button> `:''}
+            <button class="btn btn-outline btn-sm" onclick="openEditModal(${item.id})">編集</button>
+            <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="openDeleteModal(${item.id})">削除</button>
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+function showBundleGroup(bundleId) {
+  const items = getItems().filter(i=>i.bundleId===bundleId);
+  if (!items.length) return;
+  const totalSale = items[0].bundleTotal || items.reduce((s,i)=>s+(i.salePrice||0),0);
+  const totalCost = items.reduce((s,i)=>s+(calcItem(i).totalCost||0),0);
+  const profit = totalSale - totalCost;
+  alert(`📦 まとめ売りグループ（${items.length}点）\n\n` +
+    items.map(i=>`・${i.brand} ${i.details||''} ${i.size||''}`).join('\n') +
+    `\n\n合計販売額: ¥${fmt(totalSale)}\n合計コスト: ¥${fmt(totalCost)}\n合計利益: ¥${fmt(profit)}`);
+}
+
+// ==================== ADD ITEM ====================
+function renderAdd(el) {
+  const settings = getSettings();
+  const today = new Date().toISOString().slice(0,10);
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-title">仕入れ情報を入力</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>ジャンル <span style="color:var(--danger)">*</span></label>
+          <select id="a-genre">
+            <option value="">選択してください</option>
+            ${settings.genres.map(g=>`<option>${g}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>ブランド <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="a-brand" placeholder="例：ポールスミス">
+        </div>
+        <div class="form-group" style="grid-column:span 2">
+          <label>商品詳細</label>
+          <input type="text" id="a-details" placeholder="例：ブラウン/ウォッシャブル/3ピース">
+        </div>
+        <div class="form-group">
+          <label>サイズ</label>
+          <input type="text" id="a-size" placeholder="例：M, L, XL, A4, AB5">
+        </div>
+        <div class="form-group">
+          <label>仕入れ価格 <span style="color:var(--danger)">*</span></label>
+          <input type="number" id="a-price" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label>仕入れ先 <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="a-source" placeholder="例：セカンドストリート 大宮店" list="source-list" autocomplete="off">
+          <datalist id="source-list">
+            ${settings.purchaseSources.map(s=>`<option value="${s}">`).join('')}
+          </datalist>
+        </div>
+        <div class="form-group">
+          <label>仕入日 <span style="color:var(--danger)">*</span></label>
+          <input type="date" id="a-date" value="${today}">
+        </div>
+        <div class="form-group">
+          <label>初期ステータス</label>
+          <select id="a-status">
+            <option value="unlisted">未出品</option>
+            <option value="listed">出品中</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-outline" onclick="clearAddForm()">クリア</button>
+        <button class="btn btn-primary" onclick="submitAdd()">➕ 登録する</button>
+      </div>
+    </div>
+  `;
+}
+
+function clearAddForm() {
+  const keepSource = document.getElementById('a-source')?.value || '';
+  ['a-genre','a-brand','a-details','a-size','a-price','a-source'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  // 仕入れ先は引き継ぐ
+  const srcEl = document.getElementById('a-source');
+  if (srcEl) srcEl.value = keepSource;
+}
+
+function setListed(itemId) {
+  const items = getItems();
+  const idx = items.findIndex(i=>i.id===itemId);
+  if (idx<0) return;
+  items[idx] = { ...items[idx], status: 'listed' };
+  saveItems(items);
+  renderInventory(document.getElementById('content'));
+}
+
+function toggleListedStatus(itemId) {
+  const items = getItems();
+  const idx = items.findIndex(i=>i.id===itemId);
+  if (idx<0) return;
+  const current = items[idx].status || 'unlisted';
+  if (current === 'sold') return;
+  items[idx] = { ...items[idx], status: current === 'unlisted' ? 'listed' : 'unlisted' };
+  saveItems(items);
+  renderInventory(document.getElementById('content'));
+}
+
+function submitAdd() {
+  const genre = document.getElementById('a-genre').value;
+  const brand = document.getElementById('a-brand').value.trim();
+  const price = parseInt(document.getElementById('a-price').value) || 0;
+  const source = document.getElementById('a-source').value;
+  const date = document.getElementById('a-date').value;
+
+  if (!genre || !brand || !price || !source || !date) {
+    toast('⚠️ 必須項目を入力してください');
+    return;
+  }
+
+  const items = getItems();
+  const newItem = {
+    id: Date.now(),
+    no: nextNo(),
+    genre,
+    brand,
+    details: document.getElementById('a-details').value.trim(),
+    size: document.getElementById('a-size').value.trim(),
+    purchasePrice: price,
+    purchaseSource: source,
+    purchaseDate: date,
+    status: document.getElementById('a-status').value,
+    // sale fields empty
+    saleDate: null, salePrice: null, platform: null,
+    shippingMethod: null, shippingCost: 0, commission: 0, boxCost: 0
+  };
+  items.push(newItem);
+  saveItems(items);
+  toast('✅ 商品を登録しました');
+  clearAddForm();
+}
+
+// ==================== SELL LIST ====================
+function renderSellList(el) {
+  const items = getItems().filter(i => i.status !== 'sold').sort((a,b)=>b.no-a.no);
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-title">売却する商品を選んでください</div>
+      <div style="font-size:12px;color:var(--gray-400);margin-bottom:12px">
+        💡 2件以上チェックして「まとめ売り」ボタンを押すと、まとめ売り記録ができます
+      </div>
+      ${!items.length ? '<div class="empty"><div class="empty-icon">🎉</div><p>売却待ちの商品がありません</p></div>' : `
+      <div class="table-scroll"><table>
+        <thead>
+          <tr>
+            <th></th>
+            <th style="width:32px"></th>
+            <th>No</th><th>ステータス</th><th>ジャンル</th><th style="width:120px">ブランド</th>
+            <th style="min-width:200px">商品詳細</th><th>サイズ</th><th>仕入値</th><th style="width:90px">仕入れ先</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(item => {
+            const st = item.status || 'unlisted';
+            const stLabel = {unlisted:'未出品', listed:'出品中'}[st] || st;
+            const stClass = {unlisted:'badge-unlisted', listed:'badge-listed'}[st];
+            const isChecked = selectedItems.has(item.id);
+            return `<tr${isChecked?' style="background:var(--primary-light)"':''}>
+              <td>
+                <button class="btn btn-success btn-sm" onclick="openSellModal(${item.id})">💰 売却</button>
+              </td>
+              <td style="text-align:center">
+                <input type="checkbox" class="row-check" ${isChecked?'checked':''}
+                  onchange="toggleItemSelect(${item.id})" onclick="event.stopPropagation()">
+              </td>
+              <td>${item.no}</td>
+              <td><span class="badge ${stClass}">${stLabel}</span></td>
+              <td>${item.genre||'-'}</td>
+              <td style="font-weight:600;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.brand||'-'}</td>
+              <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${item.details||'-'}</td>
+              <td>${item.size||'-'}</td>
+              <td>¥${fmt(item.purchasePrice||0)}</td>
+              <td>${item.purchaseSource||'-'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>`}
+    </div>
+  `;
+}
+
+// ==================== BULK SOLD MODAL ====================
+function openBulkSoldModal() {
+  const ids = [...selectedItems];
+  if (!ids.length) return;
+  const allItems = getItems();
+  const targets = ids.map(id => allItems.find(i=>i.id===id)).filter(Boolean);
+  const settings = getSettings();
+  const today = new Date().toISOString().slice(0,10);
+
+  document.getElementById('bulk-sold-body').innerHTML = `
+    <div style="background:var(--primary-light);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.7">
+      以下 <strong>${targets.length}件</strong> を売却済みにします。<br>
+      <span style="color:var(--gray-500)">金額・送料等は省略可（後から編集できます）</span>
+    </div>
+    <div style="max-height:180px;overflow-y:auto;margin-bottom:14px">
+      ${targets.map(i=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--gray-50);border-radius:6px;margin-bottom:4px;font-size:13px">
+          <span><strong>No.${i.no}</strong>　${i.brand||''}　${i.details||''}　${i.size||''}</span>
+          <span style="color:var(--gray-400)">¥${fmt(i.purchasePrice||0)}</span>
+        </div>
+      `).join('')}
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>販売先</label>
+        <select id="bs-platform">
+          <option value="">不明/未設定</option>
+          ${settings.platforms.map(p=>`<option>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>売却日</label>
+        <input type="date" id="bs-date" value="${today}">
+      </div>
+    </div>
+    <div style="background:var(--warning-light);border-radius:8px;padding:10px 14px;font-size:12px;margin-top:12px">
+      ⚠️ 利益集計には含まれますが、金額が空の場合は利益 ¥0 として扱われます。後から「編集」で金額を入力できます。
+    </div>
+    <div class="confirm-actions">
+      <button class="btn btn-outline" onclick="closeBulkSoldModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="submitBulkSold(${JSON.stringify(ids)})">✅ ${targets.length}件を売却済みにする</button>
+    </div>
+  `;
+  document.getElementById('bulk-sold-modal').classList.add('open');
+}
+
+function closeBulkSoldModal() {
+  document.getElementById('bulk-sold-modal').classList.remove('open');
+}
+
+function submitBulkSold(ids) {
+  const platform = document.getElementById('bs-platform').value;
+  const saleDate = document.getElementById('bs-date').value;
+  const items = getItems();
+  let count = 0;
+  const updated = items.map(item => {
+    if (!ids.includes(item.id)) return item;
+    count++;
+    return { ...item, status: 'sold', platform: platform||null, saleDate };
+  });
+  saveItems(updated);
+  clearSelection();
+  closeBulkSoldModal();
+  toast(`✅ ${count}件を売却済みにしました`);
+  renderPage(currentPage);
+}
+
+// ==================== BUNDLE SELL MODAL ====================
+let itemInfosCache = [];
+
+function openBundleSellModal() {
+  const ids = [...selectedItems];
+  if (ids.length < 2) { toast('⚠️ 2件以上選択してください'); return; }
+  const allItems = getItems();
+  const targets = ids.map(id => allItems.find(i=>i.id===id)).filter(Boolean);
+  // Check all are unsold
+  if (targets.some(i=>i.status==='sold')) {
+    toast('⚠️ 売却済みの商品が含まれています'); return;
+  }
+
+  const settings = getSettings();
+  const today = new Date().toISOString().slice(0,10);
+  const totalPurchase = targets.reduce((s,i)=>s+(i.purchasePrice||0),0);
+  itemInfosCache = targets.map(i=>({id:i.id, p:i.purchasePrice||0}));
+
+  document.getElementById('bundle-modal-body').innerHTML = `
+    <div style="font-size:13px;color:var(--gray-500);margin-bottom:4px">選択した商品（${targets.length}点）</div>
+    <div class="bundle-items-list" id="bundle-items-preview">
+      ${targets.map(i=>`
+        <div class="bundle-item-row">
+          <div>
+            <div class="item-name">${i.brand||'-'} ${i.size||''}</div>
+            <div class="item-sub">${i.details||''} / 仕入 ¥${fmt(i.purchasePrice||0)}</div>
+          </div>
+          <div class="item-share" id="share-${i.id}">-</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="form-grid" style="margin-top:14px">
+      <div class="form-group">
+        <label>販売先 <span style="color:var(--danger)">*</span></label>
+        <select id="b-platform" onchange="onPlatformChange('b', 0)">
+          <option value="">選択</option>
+          ${settings.platforms.map(p=>`<option>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>売上日 <span style="color:var(--danger)">*</span></label>
+        <input type="date" id="b-date" value="${today}">
+      </div>
+      <div class="form-group">
+        <label>まとめ販売額（合計） <span style="color:var(--danger)">*</span></label>
+        <input type="number" id="b-total-price" placeholder="0"
+          oninput="updateBundleCalc(itemInfosCache||[])">
+      </div>
+      <div class="form-group">
+        <label>手数料率</label>
+        <select id="b-commission-rate"
+          onchange="updateBundleCalc(itemInfosCache||[])">
+          ${commissionRateOptions(10)}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>手数料（自動計算）</label>
+        <input type="number" id="b-commission" placeholder="自動" readonly
+          style="background:var(--gray-100);color:var(--gray-500)">
+      </div>
+      <div class="form-group" style="grid-column:span 2">
+        <label>配送方法</label>
+        <select id="b-shipping-method"
+          onchange="onShippingMethodChange('b', 0);updateBundleCalc(itemInfosCache||[])">
+          ${shippingSelectOptions('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>送料（自動入力）</label>
+        <input type="number" id="b-shipping" placeholder="0" readonly
+          style="background:var(--gray-100);color:var(--gray-500)">
+      </div>
+      <div class="form-group">
+        <label>送料調整（±）</label>
+        <input type="number" id="b-shipping-adj" placeholder="例: -20 または 50"
+          oninput="updateBundleCalc(itemInfosCache||[])">
+      </div>
+      <div class="form-group" style="grid-column:span 2">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+          <input type="checkbox" id="b-buyer-pays-shipping" onchange="onBuyerPaysShippingChange('b', 0)">
+          <span>🚚 送料購入者負担（送料 = ¥0）</span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label>専用箱代（自動入力・変更可）</label>
+        <input type="number" id="b-box" placeholder="0"
+          oninput="updateBundleCalc(itemInfosCache||[])">
+      </div>
+      <div class="form-group">
+        <label>按分方法</label>
+        <select id="b-split-method" onchange="updateBundleCalc(itemInfosCache||[])">
+          <option value="proportional">仕入れ価格の比率で按分</option>
+          <option value="equal">均等按分</option>
+        </select>
+      </div>
+    </div>
+    <div id="bundle-calc-area"></div>
+    <div class="form-actions" style="margin-top:16px">
+      <button class="btn btn-outline" onclick="closeBundleModal()">キャンセル</button>
+      <button class="btn btn-success" onclick="submitBundleSell(${JSON.stringify(ids)})">📦 まとめ売り確定</button>
+    </div>
+  `;
+  document.getElementById('bundle-modal').classList.add('open');
+}
+
+function updateBundleCalc(itemInfos) {
+  const totalPrice = parseInt(document.getElementById('b-total-price').value)||0;
+  const rate = parseInt(document.getElementById('b-commission-rate').value)||0;
+  const commission = totalPrice && rate ? Math.round(totalPrice * rate / 100) : 0;
+  const commEl = document.getElementById('b-commission');
+  if (commEl) commEl.value = commission || '';
+  const shippingBase = parseInt(document.getElementById('b-shipping').value)||0;
+  const shippingAdj  = parseInt(document.getElementById('b-shipping-adj').value)||0;
+  const shipping = shippingBase + shippingAdj;
+  const box = parseInt(document.getElementById('b-box').value)||0;
+  const splitMethod = document.getElementById('b-split-method').value;
+  const n = itemInfos.length;
+  const totalPurchase = itemInfos.reduce((s,i)=>s+i.p,0);
+  const totalSharedCost = commission + shipping + box;
+
+  // Calculate each item's share
+  itemInfos.forEach(info => {
+    const ratio = splitMethod === 'proportional'
+      ? (totalPurchase > 0 ? info.p / totalPurchase : 1/n)
+      : 1/n;
+    const saleShare = totalPrice ? Math.round(totalPrice * ratio) : 0;
+    const el = document.getElementById(`share-${info.id}`);
+    if (el) el.textContent = totalPrice ? `¥${fmt(saleShare)}` : '-';
+  });
+
+  // Overall calc
+  const allItems = getItems();
+  const targets = itemInfos.map(info => allItems.find(i=>i.id===info.id)).filter(Boolean);
+  const totalPurchaseCost = targets.reduce((s,i)=>s+(i.purchasePrice||0),0);
+  const totalCost = totalPurchaseCost + totalSharedCost;
+  const profit = totalPrice - totalCost;
+  const profitRate = totalPrice ? (profit/totalPrice*100).toFixed(1) : 0;
+
+  const area = document.getElementById('bundle-calc-area');
+  if (!totalPrice) { area.innerHTML = ''; return; }
+  area.innerHTML = `
+    <div class="bundle-calc-box">
+      <div class="bundle-calc-row"><span>合計仕入れ</span><span>¥${fmt(totalPurchaseCost)}</span></div>
+      <div class="bundle-calc-row"><span>手数料 + 送料 + 箱代</span><span>¥${fmt(totalSharedCost)}</span></div>
+      <div class="bundle-calc-row total">
+        <span>合計コスト</span><span>¥${fmt(totalCost)}</span>
+      </div>
+      <div class="bundle-calc-row total" style="font-size:16px">
+        <span>まとめ利益</span>
+        <span class="${profit>=0?'profit-pos':'profit-neg'}">¥${fmt(profit)}（${profitRate}%）</span>
+      </div>
+    </div>
+  `;
+}
+
+function closeBundleModal() {
+  document.getElementById('bundle-modal').classList.remove('open');
+}
+
+// ==================== WITHDRAW MODAL ====================
+function openWithdrawModal(itemId) {
+  const item = getItems().find(i=>i.id===itemId);
+  if (!item) return;
+  document.getElementById('withdraw-modal-body').innerHTML = `
+    <div style="background:var(--warning-light);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--gray-700)">
+      ⚠️ ヤフオク出品取り下げ手数料を記録します。<br>取り下げ後は「未出品」状態に戻ります。
+    </div>
+    <div style="background:var(--gray-50);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:14px">
+      <strong>${item.brand||''}</strong>　${item.details||''}　${item.size||''}
+      <span style="color:var(--gray-500)"> / 仕入 ¥${fmt(item.purchasePrice||0)}</span>
+      ${item.extraCost ? `<span style="color:var(--danger)"> / 既存手数料 ¥${fmt(item.extraCost)}</span>` : ''}
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>取り下げ手数料（円）</label>
+      <input type="number" id="w-fee" value="550" style="max-width:180px" oninput="updateWithdrawCalc(${item.purchasePrice||0}, ${item.extraCost||0})">
+    </div>
+    <div id="w-calc" style="font-size:13px;color:var(--gray-700);padding:10px 14px;background:var(--gray-50);border-radius:8px;margin-bottom:16px">
+      仕入 ¥${fmt(item.purchasePrice||0)}${item.extraCost?` + 既存手数料 ¥${fmt(item.extraCost)}`:''}
+      + 取下げ手数料 <strong style="color:var(--danger)">¥550</strong>
+      = 実質コスト <strong>¥${fmt((item.purchasePrice||0) + (item.extraCost||0) + 550)}</strong>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeWithdrawModal()">キャンセル</button>
+      <button class="btn btn-danger" onclick="submitWithdraw(${itemId})">⚠️ 取り下げ記録</button>
+    </div>
+  `;
+  document.getElementById('withdraw-modal').classList.add('open');
+}
+
+function updateWithdrawCalc(purchasePrice, existingExtra) {
+  const fee = parseInt(document.getElementById('w-fee').value)||0;
+  const total = purchasePrice + existingExtra + fee;
+  document.getElementById('w-calc').innerHTML =
+    `仕入 ¥${fmt(purchasePrice)}${existingExtra?` + 既存手数料 ¥${fmt(existingExtra)}`:''}
+    + 取下げ手数料 <strong style="color:var(--danger)">¥${fmt(fee)}</strong>
+    = 実質コスト <strong>¥${fmt(total)}</strong>`;
+}
+
+function closeWithdrawModal() {
+  document.getElementById('withdraw-modal').classList.remove('open');
+}
+
+function submitWithdraw(itemId) {
+  const fee = parseInt(document.getElementById('w-fee').value)||0;
+  if (!fee) { toast('⚠️ 手数料を入力してください'); return; }
+  const items = getItems();
+  const idx = items.findIndex(i=>i.id===itemId);
+  if (idx<0) return;
+  items[idx] = {
+    ...items[idx],
+    status: 'unlisted',
+    extraCost: (items[idx].extraCost||0) + fee
+  };
+  saveItems(items);
+  closeWithdrawModal();
+  toast('✅ 取り下げ手数料を記録しました（未出品に戻しました）');
+  if (currentPage === 'inventory') renderInventory(document.getElementById('content'));
+  if (currentPage === 'dashboard') renderDashboard(document.getElementById('content'));
+}
+
+function submitBundleSell(ids) {
+  const platform = document.getElementById('b-platform').value;
+  const saleDate = document.getElementById('b-date').value;
+  const totalPrice = parseInt(document.getElementById('b-total-price').value)||0;
+  if (!platform || !saleDate || !totalPrice) { toast('⚠️ 必須項目を入力してください'); return; }
+
+  const commissionRate = parseInt(document.getElementById('b-commission-rate').value)||0;
+  const commission = parseInt(document.getElementById('b-commission').value)||0;
+  const shippingBase = parseInt(document.getElementById('b-shipping').value)||0;
+  const shippingAdj  = parseInt(document.getElementById('b-shipping-adj').value)||0;
+  const shippingCost = shippingBase + shippingAdj;
+  const boxCost = parseInt(document.getElementById('b-box').value)||0;
+  const shippingMethod = document.getElementById('b-shipping-method').value;
+  const splitMethod = document.getElementById('b-split-method').value;
+
+  const allItems = getItems();
+  const targets = ids.map(id=>allItems.find(i=>i.id===id)).filter(Boolean);
+  const totalPurchase = targets.reduce((s,i)=>s+(i.purchasePrice||0),0);
+  const n = targets.length;
+  const bundleId = 'bundle_' + Date.now();
+
+  const updated = allItems.map(item => {
+    if (!ids.includes(item.id)) return item;
+    const ratio = splitMethod === 'proportional'
+      ? (totalPurchase > 0 ? (item.purchasePrice||0) / totalPurchase : 1/n)
+      : 1/n;
+    return {
+      ...item,
+      status: 'sold',
+      bundleId,
+      bundleTotal: totalPrice,
+      saleDate,
+      platform,
+      salePrice: Math.round(totalPrice * ratio),
+      commissionRate,
+      commission: Math.round(commission * ratio),
+      shippingCost: Math.round(shippingCost * ratio),
+      boxCost: Math.round(boxCost * ratio),
+      shippingMethod,
+      buyerPaysShipping: !!(document.getElementById('b-buyer-pays-shipping')?.checked)
+    };
+  });
+
+  saveItems(updated);
+  clearSelection();
+  closeBundleModal();
+  toast(`✅ まとめ売り（${targets.length}点）を記録しました`);
+  renderPage(currentPage);
+}
+
+// ==================== SELL MODAL ====================
+function openSellModal(itemId) {
+  const item = getItems().find(i=>i.id===itemId);
+  if (!item) return;
+  const settings = getSettings();
+  const today = new Date().toISOString().slice(0,10);
+
+  document.getElementById('sell-modal-body').innerHTML = `
+    <div style="background:var(--gray-50);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:14px">
+      <strong>${item.brand}</strong>　${item.details||''}　${item.size||''}
+      <span style="color:var(--gray-500)"> / 仕入 ¥${fmt(item.purchasePrice)}</span>
+      ${item.extraCost ? `<span style="color:var(--danger)"> / 取下げ手数料 ¥${fmt(item.extraCost)}</span>` : ''}
+    </div>
+    <input type="hidden" id="s-extra-cost" value="${item.extraCost||0}">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>販売先 <span style="color:var(--danger)">*</span></label>
+        <select id="s-platform" onchange="onPlatformChange('s', ${item.purchasePrice})">
+          <option value="">選択</option>
+          ${settings.platforms.map(p=>`<option>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>売上日 <span style="color:var(--danger)">*</span></label>
+        <input type="date" id="s-date" value="${today}">
+      </div>
+      <div class="form-group">
+        <label>販売額 <span style="color:var(--danger)">*</span></label>
+        <input type="number" id="s-price" placeholder="0" oninput="updateSellCalc(${item.purchasePrice})">
+      </div>
+      <div class="form-group">
+        <label>手数料率</label>
+        <select id="s-commission-rate" onchange="updateSellCalc(${item.purchasePrice})">
+          ${commissionRateOptions(10)}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>手数料（自動計算）</label>
+        <input type="number" id="s-commission" placeholder="自動" readonly
+          style="background:var(--gray-100);color:var(--gray-500)">
+      </div>
+      <div class="form-group" style="grid-column:span 2">
+        <label>配送方法</label>
+        <select id="s-shipping-method" onchange="onShippingMethodChange('s', ${item.purchasePrice})">
+          ${shippingSelectOptions('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>送料（自動入力）</label>
+        <input type="number" id="s-shipping" placeholder="0" readonly
+          style="background:var(--gray-100);color:var(--gray-500)">
+      </div>
+      <div class="form-group">
+        <label>送料調整（±）</label>
+        <input type="number" id="s-shipping-adj" placeholder="例: -20 または 50" oninput="updateSellCalc(${item.purchasePrice})">
+      </div>
+      <div class="form-group" style="grid-column:span 2">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:normal">
+          <input type="checkbox" id="s-buyer-pays-shipping" onchange="onBuyerPaysShippingChange('s', ${item.purchasePrice})">
+          <span>🚚 送料購入者負担（送料 = ¥0）</span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label>専用箱代（自動入力・変更可）</label>
+        <input type="number" id="s-box" placeholder="0" oninput="updateSellCalc(${item.purchasePrice})">
+      </div>
+    </div>
+    <div id="sell-calc" style="background:var(--primary-light);border-radius:10px;padding:12px 16px;margin-top:16px;font-size:14px">
+      <span style="color:var(--gray-500)">販売額・配送方法を入力すると利益が表示されます</span>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeSellModal()">キャンセル</button>
+      <button class="btn btn-success" onclick="submitSell(${itemId})">💰 売却確定</button>
+    </div>
+  `;
+  document.getElementById('sell-modal').classList.add('open');
+}
+
+// 販売先変更時に手数料率を自動セット
+function onPlatformChange(prefix, purchasePrice) {
+  const platform = document.getElementById(`${prefix}-platform`).value;
+  const rate = PLATFORM_COMMISSION[platform];
+  if (rate !== undefined) {
+    document.getElementById(`${prefix}-commission-rate`).value = rate;
+  }
+  if (prefix === 's') updateSellCalc(purchasePrice);
+  else if (prefix === 'b') {
+    const btn = document.getElementById('b-total-price');
+    if (btn) btn.dispatchEvent(new Event('input'));
+  }
+}
+
+// 配送方法変更時に送料・箱代を自動セット
+function onShippingMethodChange(prefix, purchasePrice) {
+  const buyerPaysEl = document.getElementById(`${prefix}-buyer-pays-shipping`);
+  const buyerPays = buyerPaysEl && buyerPaysEl.checked;
+  if (!buyerPays) {
+    const method = document.getElementById(`${prefix}-shipping-method`).value;
+    const data = SHIPPING_DATA.find(d=>d.label===method);
+    if (data) {
+      document.getElementById(`${prefix}-shipping`).value = data.fee;
+      document.getElementById(`${prefix}-box`).value = data.box;
+    } else {
+      document.getElementById(`${prefix}-shipping`).value = '';
+      document.getElementById(`${prefix}-box`).value = '';
+    }
+  }
+  if (prefix === 's') updateSellCalc(purchasePrice);
+  else if (prefix === 'b') {
+    // bundle: trigger updateBundleCalc via stored itemInfos
+    const btn = document.getElementById('b-total-price');
+    if (btn) btn.dispatchEvent(new Event('input'));
+  }
+}
+
+// 送料購入者負担チェックボックス
+function onBuyerPaysShippingChange(prefix, purchasePrice) {
+  const checked = document.getElementById(`${prefix}-buyer-pays-shipping`).checked;
+  const shippingEl  = document.getElementById(`${prefix}-shipping`);
+  const adjEl       = document.getElementById(`${prefix}-shipping-adj`);
+  const methodEl    = document.getElementById(`${prefix}-shipping-method`);
+  if (checked) {
+    shippingEl.value = '0';
+    if (adjEl) { adjEl.value = ''; adjEl.disabled = true; }
+    if (methodEl) methodEl.disabled = true;
+  } else {
+    if (adjEl) adjEl.disabled = false;
+    if (methodEl) { methodEl.disabled = false; }
+    // Restore shipping fee from selected method
+    onShippingMethodChange(prefix, purchasePrice);
+    return;
+  }
+  if (prefix === 's') updateSellCalc(purchasePrice);
+  else {
+    const btn = document.getElementById('b-total-price');
+    if (btn) btn.dispatchEvent(new Event('input'));
+  }
+}
+
+function updateSellCalc(purchasePrice) {
+  const extraCost = parseInt(document.getElementById('s-extra-cost')?.value)||0;
+  const sp   = parseInt(document.getElementById('s-price').value)||0;
+  const rate = parseInt(document.getElementById('s-commission-rate').value)||0;
+  const comm = sp && rate ? Math.round(sp * rate / 100) : 0;
+  document.getElementById('s-commission').value = comm || '';
+  const ship = parseInt(document.getElementById('s-shipping').value)||0;
+  const adj  = parseInt(document.getElementById('s-shipping-adj').value)||0;
+  const box  = parseInt(document.getElementById('s-box').value)||0;
+  const actualShip = ship + adj;
+  const cost = purchasePrice + extraCost + comm + actualShip + box;
+  const profit = sp - cost;
+  const profitRate = sp ? (profit/sp*100).toFixed(1) : 0;
+  const el = document.getElementById('sell-calc');
+  if (!sp) { el.innerHTML = '<span style="color:var(--gray-500)">販売額を入力すると利益が表示されます</span>'; return; }
+  el.innerHTML = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+      <div><span style="color:var(--gray-500);font-size:12px">仕入れ</span><br><strong>¥${fmt(purchasePrice)}</strong></div>
+      ${extraCost ? `<div><span style="color:var(--danger);font-size:12px">取下げ手数料</span><br><strong style="color:var(--danger)">¥${fmt(extraCost)}</strong></div>` : ''}
+      <div style="color:var(--gray-400);font-size:18px;padding-top:14px">+</div>
+      <div><span style="color:var(--gray-500);font-size:12px">手数料(${rate}%)</span><br><strong>¥${fmt(comm)}</strong></div>
+      <div><span style="color:var(--gray-500);font-size:12px">送料${adj!==0?`<span style="color:${adj>0?'var(--danger)':'var(--success)'}">（${adj>0?'+':''}${adj}）</span>`:''}
+      </span><br><strong>¥${fmt(actualShip)}</strong></div>
+      <div><span style="color:var(--gray-500);font-size:12px">専用箱代</span><br><strong>¥${fmt(box)}</strong></div>
+      <div style="color:var(--gray-400);font-size:18px;padding-top:14px">=</div>
+      <div><span style="color:var(--gray-500);font-size:12px">コスト計</span><br><strong>¥${fmt(cost)}</strong></div>
+      <div style="margin-left:8px;padding-left:12px;border-left:2px solid var(--gray-200)">
+        <span style="color:var(--gray-500);font-size:12px">利益</span><br>
+        <strong class="${profit>=0?'profit-pos':'profit-neg'}" style="font-size:18px">¥${fmt(profit)}</strong>
+        <span class="${profit>=0?'profit-pos':'profit-neg'}" style="font-size:13px;margin-left:4px">${profitRate}%</span>
+      </div>
+    </div>
+  `;
+}
+
+function closeSellModal() {
+  document.getElementById('sell-modal').classList.remove('open');
+}
+
+function submitSell(itemId) {
+  const platform = document.getElementById('s-platform').value;
+  const saleDate = document.getElementById('s-date').value;
+  const salePrice = parseInt(document.getElementById('s-price').value)||0;
+  if (!platform || !saleDate || !salePrice) { toast('⚠️ 必須項目を入力してください'); return; }
+
+  const items = getItems();
+  const idx = items.findIndex(i=>i.id===itemId);
+  if (idx<0) return;
+  const shipBase = parseInt(document.getElementById('s-shipping').value)||0;
+  const shipAdj  = parseInt(document.getElementById('s-shipping-adj').value)||0;
+  items[idx] = {
+    ...items[idx],
+    status: 'sold', platform,
+    saleDate, salePrice,
+    commissionRate: parseInt(document.getElementById('s-commission-rate').value)||0,
+    commission: parseInt(document.getElementById('s-commission').value)||0,
+    shippingCost: shipBase + shipAdj,
+    shippingAdj: shipAdj,
+    boxCost: parseInt(document.getElementById('s-box').value)||0,
+    shippingMethod: document.getElementById('s-shipping-method').value,
+    buyerPaysShipping: !!(document.getElementById('s-buyer-pays-shipping')?.checked)
+  };
+  saveItems(items);
+  closeSellModal();
+  toast('✅ 売却を記録しました');
+  if (currentPage === 'sell') renderSellList(document.getElementById('content'));
+  if (currentPage === 'inventory') renderInventory(document.getElementById('content'));
+  if (currentPage === 'dashboard') renderDashboard(document.getElementById('content'));
+}
+
+// ==================== EDIT MODAL ====================
+function openEditModal(itemId) {
+  const item = getItems().find(i=>i.id===itemId);
+  if (!item) return;
+  const settings = getSettings();
+
+  document.getElementById('edit-modal-body').innerHTML = `
+    <div class="form-grid">
+      <div class="form-group">
+        <label>ジャンル</label>
+        <select id="e-genre">
+          ${settings.genres.map(g=>`<option ${item.genre===g?'selected':''}>${g}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>ブランド</label>
+        <input type="text" id="e-brand" value="${item.brand||''}">
+      </div>
+      <div class="form-group" style="grid-column:span 2">
+        <label>商品詳細</label>
+        <input type="text" id="e-details" value="${item.details||''}">
+      </div>
+      <div class="form-group">
+        <label>サイズ</label>
+        <input type="text" id="e-size" value="${item.size||''}">
+      </div>
+      <div class="form-group">
+        <label>仕入れ価格</label>
+        <input type="number" id="e-price" value="${item.purchasePrice||0}">
+      </div>
+      <div class="form-group">
+        <label>仕入れ先</label>
+        <input type="text" id="e-source" value="${item.purchaseSource||''}" placeholder="例：セカンドストリート 大宮店" list="e-source-list" autocomplete="off">
+        <datalist id="e-source-list">
+          ${settings.purchaseSources.map(s=>`<option value="${s}">`).join('')}
+        </datalist>
+      </div>
+      <div class="form-group">
+        <label>仕入日</label>
+        <input type="date" id="e-date" value="${item.purchaseDate||''}">
+      </div>
+      <div class="form-group">
+        <label>ステータス</label>
+        <select id="e-status">
+          <option value="unlisted" ${(item.status||'unlisted')==='unlisted'?'selected':''}>未出品</option>
+          <option value="listed" ${item.status==='listed'?'selected':''}>出品中</option>
+          <option value="sold" ${item.status==='sold'?'selected':''}>売却済み</option>
+        </select>
+      </div>
+      ${item.status==='sold' ? `
+      <div class="form-group" style="grid-column:span 2"><div class="section-divider"></div></div>
+      <div class="form-group">
+        <label>販売先</label>
+        <select id="e-platform">
+          ${settings.platforms.map(p=>`<option ${item.platform===p?'selected':''}>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>売上日</label>
+        <input type="date" id="e-saledate" value="${item.saleDate||''}">
+      </div>
+      <div class="form-group">
+        <label>販売額</label>
+        <input type="number" id="e-saleprice" value="${item.salePrice||0}">
+      </div>
+      <div class="form-group">
+        <label>手数料</label>
+        <input type="number" id="e-commission" value="${item.commission||0}">
+      </div>
+      <div class="form-group">
+        <label>送料</label>
+        <input type="number" id="e-shipping" value="${item.shippingCost||0}">
+      </div>
+      <div class="form-group">
+        <label>専用箱代</label>
+        <input type="number" id="e-box" value="${item.boxCost||0}">
+      </div>
+      ` : ''}
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closeEditModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="submitEdit(${itemId})">保存する</button>
+    </div>
+  `;
+  document.getElementById('edit-modal').classList.add('open');
+}
+function closeEditModal() { document.getElementById('edit-modal').classList.remove('open'); }
+
+function submitEdit(itemId) {
+  const items = getItems();
+  const idx = items.findIndex(i=>i.id===itemId);
+  if (idx<0) return;
+  const item = items[idx];
+  const status = document.getElementById('e-status').value;
+  items[idx] = {
+    ...item,
+    genre: document.getElementById('e-genre').value,
+    brand: document.getElementById('e-brand').value,
+    details: document.getElementById('e-details').value,
+    size: document.getElementById('e-size').value,
+    purchasePrice: parseInt(document.getElementById('e-price').value)||0,
+    purchaseSource: document.getElementById('e-source').value,
+    purchaseDate: document.getElementById('e-date').value,
+    status,
+    ...(status==='sold' ? {
+      platform: document.getElementById('e-platform')?.value,
+      saleDate: document.getElementById('e-saledate')?.value,
+      salePrice: parseInt(document.getElementById('e-saleprice')?.value)||0,
+      commission: parseInt(document.getElementById('e-commission')?.value)||0,
+      shippingCost: parseInt(document.getElementById('e-shipping')?.value)||0,
+      boxCost: parseInt(document.getElementById('e-box')?.value)||0,
+    } : {})
+  };
+  saveItems(items);
+  closeEditModal();
+  toast('✅ 変更を保存しました');
+  renderPage(currentPage);
+}
+
+// ==================== DELETE ====================
+let deleteTargetId = null;
+function openDeleteModal(itemId) {
+  deleteTargetId = itemId;
+  document.getElementById('delete-modal').classList.add('open');
+  document.getElementById('confirm-delete-btn').onclick = () => confirmDelete();
+}
+function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); deleteTargetId = null; }
+function confirmDelete() {
+  if (!deleteTargetId) return;
+  const items = getItems().filter(i=>i.id!==deleteTargetId);
+  saveItems(items);
+  closeDeleteModal();
+  toast('🗑️ 削除しました');
+  renderPage(currentPage);
+}
+
+// ==================== SETTINGS ====================
+function renderSettings(el) {
+  const s = getSettings();
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+      ${renderSettingSection('仕入れ先', s.purchaseSources, 'purchaseSources')}
+      ${renderSettingSection('販売先プラットフォーム', s.platforms, 'platforms')}
+      ${renderSettingSection('ジャンル', s.genres, 'genres')}
+      ${renderSettingSection('配送方法', s.shippingMethods, 'shippingMethods')}
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-title" style="color:var(--danger)">データ管理</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-outline" onclick="exportCSV()">📥 全データCSV出力</button>
+        <button class="btn btn-outline" onclick="importCSV()">📤 CSVインポート</button>
+        <button class="btn btn-outline" style="color:var(--danger)" onclick="clearAllData()">🗑️ 全データ削除</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSettingSection(title, items, key) {
+  return `<div class="card">
+    <div class="card-title">${title}</div>
+    <ul class="settings-list" id="list-${key}">
+      ${items.map((item,i)=>`<li>
+        <span>${item}</span>
+        <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="removeSettingItem('${key}',${i})">削除</button>
+      </li>`).join('')}
+    </ul>
+    <div class="add-tag-row">
+      <input type="text" id="input-${key}" placeholder="追加する項目名">
+      <button class="btn btn-primary btn-sm" onclick="addSettingItem('${key}')">追加</button>
+    </div>
+  </div>`;
+}
+
+function addSettingItem(key) {
+  const input = document.getElementById(`input-${key}`);
+  const val = input.value.trim();
+  if (!val) return;
+  const s = getSettings();
+  if (s[key].includes(val)) { toast('⚠️ すでに登録されています'); return; }
+  s[key].push(val);
+  saveSettings(s);
+  input.value = '';
+  renderSettings(document.getElementById('content'));
+  toast('✅ 追加しました');
+}
+
+function removeSettingItem(key, idx) {
+  const s = getSettings();
+  s[key].splice(idx, 1);
+  saveSettings(s);
+  renderSettings(document.getElementById('content'));
+  toast('削除しました');
+}
+
+// ==================== CSV ====================
+function exportCSV() {
+  const items = getItems();
+  const headers = ['No','ステータス','売上日','ジャンル','ブランド','商品詳細','サイズ','仕入れ','仕入れ先','仕入日','販売先','配送方法','販売額','手数料','送料','専用箱代','コスト計','利益','利益率'];
+  const rows = items.map(item => {
+    const c = calcItem(item);
+    const stLabel = {unlisted:'未出品',listed:'出品中',sold:'売却済み'}[item.status||'unlisted'];
+    return [
+      item.no, stLabel, item.saleDate||'', item.genre||'', item.brand||'', item.details||'',
+      item.size||'', item.purchasePrice||0, item.purchaseSource||'', item.purchaseDate||'',
+      item.platform||'', item.shippingMethod||'', item.salePrice||'',
+      item.commission||0, item.shippingCost||0, item.boxCost||0,
+      c.totalCost||0, c.profit!=null?c.profit:'', c.profitRate!=null?c.profitRate.toFixed(1)+'%':''
+    ];
+  });
+  const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+  const bom = '\uFEFF';
+  const blob = new Blob([bom+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `apparel_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  toast('📥 CSVをダウンロードしました');
+}
+
+function importCSV() {
+  document.getElementById('import-modal').classList.add('open');
+  resetImport();
+}
+function closeImportModal() {
+  document.getElementById('import-modal').classList.remove('open');
+}
+function resetImport() {
+  document.getElementById('import-step1').style.display = '';
+  document.getElementById('import-step2').style.display = 'none';
+  document.getElementById('csv-file-input').value = '';
+}
+
+// CSV Parser: handles quoted fields, BOM, CRLF
+function parseCSV(text) {
+  // Remove BOM
+  text = text.replace(/^\uFEFF/, '');
+  const lines = [];
+  let cur = '', inQ = false, row = [];
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"' && text[i+1] === '"') { cur += '"'; i++; }
+      else if (c === '"') inQ = false;
+      else cur += c;
+    } else {
+      if (c === '"') { inQ = true; }
+      else if (c === ',') { row.push(cur); cur = ''; }
+      else if (c === '\n' || (c === '\r' && text[i+1] === '\n')) {
+        if (c === '\r') i++;
+        row.push(cur); cur = '';
+        lines.push(row); row = [];
+      } else cur += c;
+    }
+  }
+  if (cur || row.length) { row.push(cur); lines.push(row); }
+  return lines;
+}
+
+// Find header row (the row containing "No" and "ブランド")
+function findHeaderRow(rows) {
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const r = rows[i];
+    const hasNo = r.some(c => c.trim() === 'No');
+    const hasBrand = r.some(c => c.trim() === 'ブランド' || c.trim() === 'ブランド ');
+    if (hasNo && hasBrand) return i;
+  }
+  return -1;
+}
+
+// Map CSV row to item object
+const CSV_COL_MAP = {
+  'No': 'no',
+  '売上日': 'saleDate',
+  'ジャンル': 'genre',
+  'ブランド': 'brand',
+  '商品詳細': 'details',
+  'サイズ': 'size',
+  '配送方法': 'shippingMethod',
+  '販売額': 'salePrice',
+  '仕入れ': 'purchasePrice',
+  '仕入': 'purchasePrice',
+  '手数料': 'commission',
+  '送料': 'shippingCost',
+  '専用箱代': 'boxCost',
+  '仕入れ先': 'purchaseSource',
+  '仕入先': 'purchaseSource',
+  '仕入日': 'purchaseDate',
+  '販売先': 'platform'
+};
+
+function handleCSVFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      processImportCSV(e.target.result);
+    } catch(err) {
+      toast('⚠️ CSVの読み込みに失敗しました: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+let importReadyItems = [];
+
+function processImportCSV(text) {
+  const rows = parseCSV(text);
+  const headerIdx = findHeaderRow(rows);
+  if (headerIdx < 0) {
+    toast('⚠️ ヘッダー行が見つかりません。「取引データ」シートのCSVか確認してください。');
+    return;
+  }
+
+  const headers = rows[headerIdx].map(h => h.trim());
+  const dataRows = rows.slice(headerIdx + 1).filter(r => r.some(c => c.trim()));
+
+  // Build column index map
+  const colIdx = {};
+  headers.forEach((h, i) => {
+    const key = CSV_COL_MAP[h];
+    if (key) colIdx[key] = i;
+  });
+
+  const getVal = (row, key) => {
+    if (colIdx[key] === undefined) return '';
+    return (row[colIdx[key]] || '').trim();
+  };
+  const getNum = (row, key) => {
+    const v = getVal(row, key).replace(/[¥,\s]/g, '');
+    return v ? parseInt(v) || 0 : 0;
+  };
+
+  importReadyItems = [];
+  let skipped = 0;
+
+  dataRows.forEach((row, i) => {
+    const brand = getVal(row, 'brand');
+    const purchasePrice = getNum(row, 'purchasePrice');
+    // Skip rows without brand or purchasePrice
+    if (!brand && !purchasePrice) { skipped++; return; }
+
+    const saleDate = getVal(row, 'saleDate');
+    const salePrice = getNum(row, 'salePrice');
+    const status = saleDate ? 'sold' : 'listed';
+
+    // Parse date: handle formats like "2026/3/25" or "2026-03-25"
+    const parseDate = (d) => {
+      if (!d) return '';
+      // Convert "2026/3/25" → "2026-03-25"
+      const m = d.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+      if (m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+      return d;
+    };
+
+    importReadyItems.push({
+      id: Date.now() + i + Math.random(),
+      no: parseInt(getVal(row, 'no')) || (importReadyItems.length + 1),
+      genre: getVal(row, 'genre'),
+      brand,
+      details: getVal(row, 'details'),
+      size: getVal(row, 'size'),
+      purchasePrice,
+      purchaseSource: getVal(row, 'purchaseSource'),
+      purchaseDate: parseDate(getVal(row, 'purchaseDate')),
+      status,
+      saleDate: parseDate(saleDate),
+      salePrice: salePrice || null,
+      platform: getVal(row, 'platform') || null,
+      shippingMethod: getVal(row, 'shippingMethod'),
+      commission: getNum(row, 'commission'),
+      shippingCost: getNum(row, 'shippingCost'),
+      boxCost: getNum(row, 'boxCost')
+    });
+  });
+
+  // Show preview
+  const sold = importReadyItems.filter(i=>i.status==='sold').length;
+  const unsold = importReadyItems.filter(i=>i.status!=='sold').length;
+
+  document.getElementById('import-summary').innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="background:var(--success-light);border-radius:8px;padding:10px 16px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:var(--success)">${importReadyItems.length}</div>
+        <div style="font-size:12px;color:var(--gray-500)">取り込み件数</div>
+      </div>
+      <div style="background:var(--success-light);border-radius:8px;padding:10px 16px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:var(--success)">${sold}</div>
+        <div style="font-size:12px;color:var(--gray-500)">売却済み</div>
+      </div>
+      <div style="background:var(--warning-light);border-radius:8px;padding:10px 16px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:#92400E">${unsold}</div>
+        <div style="font-size:12px;color:var(--gray-500)">在庫（出品中）</div>
+      </div>
+      ${skipped>0?`<div style="background:var(--gray-100);border-radius:8px;padding:10px 16px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:var(--gray-500)">${skipped}</div>
+        <div style="font-size:12px;color:var(--gray-500)">スキップ</div>
+      </div>`:''}
+    </div>
+    <div style="font-size:13px;color:var(--gray-500);margin-bottom:8px">▼ プレビュー（最初の10件）</div>
+  `;
+
+  // Preview table
+  const preview = importReadyItems.slice(0, 10);
+  document.getElementById('import-preview-table').innerHTML = `
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>No</th><th>ステータス</th><th>ジャンル</th><th>ブランド</th>
+        <th>商品詳細</th><th>サイズ</th><th>仕入値</th><th style="width:90px">仕入れ先</th>
+        <th>仕入日</th><th>販売額</th><th>売上日</th>
+      </tr></thead>
+      <tbody>
+        ${preview.map(item => {
+          const st = item.status;
+          const stLabel = {listed:'出品中',sold:'売却済み'}[st]||st;
+          const stClass = {listed:'badge-listed',sold:'badge-sold'}[st]||'';
+          return `<tr>
+            <td>${item.no}</td>
+            <td><span class="badge ${stClass}">${stLabel}</span></td>
+            <td>${item.genre||'-'}</td>
+            <td><strong>${item.brand||'-'}</strong></td>
+            <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">${item.details||'-'}</td>
+            <td>${item.size||'-'}</td>
+            <td>¥${fmt(item.purchasePrice)}</td>
+            <td style="font-size:11px">${item.purchaseSource||'-'}</td>
+            <td style="font-size:11px">${item.purchaseDate||'-'}</td>
+            <td>${item.salePrice?'¥'+fmt(item.salePrice):'-'}</td>
+            <td style="font-size:11px">${item.saleDate||'-'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div>
+  `;
+
+  document.getElementById('import-step1').style.display = 'none';
+  document.getElementById('import-step2').style.display = '';
+  document.getElementById('import-exec-btn').onclick = executeImport;
+}
+
+function executeImport() {
+  if (!importReadyItems.length) return;
+  const existing = getItems();
+
+  // Merge: keep existing, add new (avoid duplicates by No)
+  const existingNos = new Set(existing.map(i=>i.no));
+  let added = 0, updated = 0;
+
+  const merged = [...existing];
+  importReadyItems.forEach(item => {
+    if (existingNos.has(item.no)) {
+      // Update existing
+      const idx = merged.findIndex(i=>i.no===item.no);
+      if (idx >= 0) { merged[idx] = {...item, id: merged[idx].id}; updated++; }
+    } else {
+      merged.push(item);
+      added++;
+    }
+  });
+
+  saveItems(merged);
+  closeImportModal();
+  toast(`✅ インポート完了：新規 ${added}件、更新 ${updated}件`);
+  navigateTo('inventory');
+}
+
+function clearAllData() {
+  if (confirm('全データを削除しますか？この操作は元に戻せません。')) {
+    localStorage.removeItem(DB_KEY);
+    toast('🗑️ データを削除しました');
+    renderPage(currentPage);
+  }
+}
+
+// ==================== UTILS ====================
+function fmt(n) {
+  if (n===null||n===undefined) return '0';
+  return Math.round(n).toLocaleString('ja-JP');
+}
+
+// ==================== INIT ====================
+navigateTo('dashboard');
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));
+}
+</script>
+</body>
+</html>

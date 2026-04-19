@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <!-- 紫背景 -->
+  <rect width="192" height="192" rx="36" fill="#4F46E5"/>
+  <!-- グラフ棒（在庫イメージ） -->
+  <rect x="30" y="110" width="30" height="52" rx="6" fill="white" opacity="0.9"/>
+  <rect x="76" y="78" width="30" height="84" rx="6" fill="white"/>
+  <rect x="122" y="52" width="30" height="110" rx="6" fill="white" opacity="0.9"/>
+  <!-- 上昇矢印 -->
+  <polyline points="24,108 80,68 126,44 168,28"
+            stroke="rgba(255,255,255,0.5)" stroke-width="7"
+            fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="168,28 148,32 160,46"
+           fill="rgba(255,255,255,0.5)"/>
+</svg>
