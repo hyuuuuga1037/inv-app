@@ -498,6 +498,8 @@
 <!-- Toast -->
 <div id="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script>
 // ==================== SHIPPING MASTER ====================
 const SHIPPING_DATA = [
@@ -556,7 +558,54 @@ function getItems() {
   const d = localStorage.getItem(DB_KEY);
   return d ? JSON.parse(d) : [];
 }
-function saveItems(items) { localStorage.setItem(DB_KEY, JSON.stringify(items)); }
+function saveItems(items) {
+  localStorage.setItem(DB_KEY, JSON.stringify(items));
+  _syncToFirestore(items);
+}
+
+// ── Firebase（非同期・後付け同期） ──
+let _db = null;
+let _fsIds = new Set();
+
+function _syncToFirestore(items) {
+  if (!_db) return;
+  try {
+    const batch = _db.batch();
+    const col = _db.collection('inventory');
+    const newIds = new Set(items.map(i => String(i.id)));
+    _fsIds.forEach(id => { if (!newIds.has(id)) batch.delete(col.doc(id)); });
+    items.forEach(item => batch.set(col.doc(String(item.id)), item));
+    batch.commit().then(() => { _fsIds = newIds; }).catch(e => console.warn(e));
+  } catch(e) { console.warn(e); }
+}
+
+function initFirebase() {
+  try {
+    const cfg = {
+      apiKey:"AIzaSyDCK9lsBJsc-UxzxcfxMPdJS94V1gZb2k8",
+      authDomain:"hs-tools-86dab.firebaseapp.com",
+      projectId:"hs-tools-86dab",
+      storageBucket:"hs-tools-86dab.firebasestorage.app",
+      messagingSenderId:"755265926130",
+      appId:"1:755265926130:web:257584deb277fc7ce3716b"
+    };
+    if (!firebase.apps.length) firebase.initializeApp(cfg);
+    _db = firebase.firestore();
+    _db.collection('inventory').onSnapshot(snapshot => {
+      if (snapshot.metadata.hasPendingWrites) return;
+      const items = snapshot.docs.map(d => d.data());
+      _fsIds = new Set(snapshot.docs.map(d => d.id));
+      if (items.length === 0) {
+        // Firestoreが空→PCのlocalStorageデータを移行
+        const local = localStorage.getItem(DB_KEY);
+        if (local) { const arr = JSON.parse(local); if (arr.length) _syncToFirestore(arr); }
+      } else {
+        localStorage.setItem(DB_KEY, JSON.stringify(items));
+        renderPage(currentPage);
+      }
+    }, e => console.warn('Firestore:', e));
+  } catch(e) { console.warn('Firebase init error:', e); }
+}
 
 const DEFAULT_SETTINGS = {
   purchaseSources: [
@@ -2147,7 +2196,11 @@ function fmt(n) {
 }
 
 // ==================== INIT ====================
-navigateTo('dashboard');
+navigateTo('dashboard'); // まずlocalStorageで即表示
+initFirebase();          // その後Firebaseで同期（非同期・失敗しても問題なし）
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));
+}
 </script>
 </body>
 </html>
