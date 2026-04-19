@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <title>アパレルせどり管理</title>
 <meta name="theme-color" content="#4F46E5">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -72,7 +72,9 @@
   #mobile-nav {
     display: none; position: fixed; bottom: 0; left: 0; right: 0;
     background: white; border-top: 1px solid var(--gray-200);
-    height: var(--nav-height); z-index: 100; padding: 0 4px;
+    height: calc(var(--nav-height) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 100; padding-left: 4px; padding-right: 4px;
     justify-content: space-around; align-items: center;
   }
   #mobile-nav a {
@@ -85,7 +87,7 @@
 
   @media (max-width: 768px) {
     #sidebar { display: none; }
-    #main { margin-left: 0; padding: 16px; max-width: 100%; padding-bottom: calc(var(--nav-height) + 16px); }
+    #main { margin-left: 0; padding: 16px; max-width: 100%; padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 16px); }
     #mobile-nav { display: flex; }
     #page-header h1 { font-size: 18px; }
   }
@@ -496,6 +498,8 @@
 <!-- Toast -->
 <div id="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
 // ==================== SHIPPING MASTER ====================
 const SHIPPING_DATA = [
@@ -550,6 +554,60 @@ function commissionRateOptions(selectedRate) {
 const DB_KEY = 'apparel_items';
 const SETTINGS_KEY = 'apparel_settings';
 
+// ── Firebase 設定 ──
+const firebaseConfig = {
+  apiKey: "AIzaSyDCK9lsBJsc-UxzxcfxMPdJS94V1gZb2k8",
+  authDomain: "hs-tools-86dab.firebaseapp.com",
+  projectId: "hs-tools-86dab",
+  storageBucket: "hs-tools-86dab.firebasestorage.app",
+  messagingSenderId: "755265926130",
+  appId: "1:755265926130:web:257584deb277fc7ce3716b"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ローカルキャッシュ
+let _items = [];
+let _firestoreItemIds = new Set();
+let _firestoreReady = false;
+
+function initFirestore() {
+  db.collection('inventory').onSnapshot(snapshot => {
+    _items = snapshot.docs.map(doc => doc.data());
+    _firestoreItemIds = new Set(snapshot.docs.map(doc => doc.id));
+    _firestoreReady = true;
+    if (typeof currentPage !== 'undefined') renderPage(currentPage);
+  }, err => {
+    console.error('Firestore接続エラー:', err);
+    // ローカルストレージにフォールバック
+    const d = localStorage.getItem(DB_KEY);
+    _items = d ? JSON.parse(d) : [];
+    _firestoreReady = true;
+    if (typeof currentPage !== 'undefined') renderPage(currentPage);
+  });
+}
+
+function getItems() { return _items; }
+
+function saveItems(items) {
+  _items = items; // ローカルを即時更新（UI即応）
+  const batch = db.batch();
+  const colRef = db.collection('inventory');
+  const newIds = new Set(items.map(i => String(i.id)));
+  // 削除されたアイテムをFirestoreから消す
+  _firestoreItemIds.forEach(id => {
+    if (!newIds.has(id)) batch.delete(colRef.doc(id));
+  });
+  // 全アイテムをセット（追加・更新）
+  items.forEach(item => batch.set(colRef.doc(String(item.id)), item));
+  batch.commit().then(() => {
+    _firestoreItemIds = newIds;
+  }).catch(err => {
+    console.error('Firestore書き込みエラー:', err);
+    localStorage.setItem(DB_KEY, JSON.stringify(items)); // フォールバック
+  });
+}
+
 const DEFAULT_SETTINGS = {
   purchaseSources: [
     'セカンドストリート', 'オフハウス', 'トレジャーファクトリー',
@@ -572,12 +630,6 @@ function getSettings() {
   };
 }
 function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
-
-function getItems() {
-  const d = localStorage.getItem(DB_KEY);
-  return d ? JSON.parse(d) : [];
-}
-function saveItems(items) { localStorage.setItem(DB_KEY, JSON.stringify(items)); }
 
 function nextNo() {
   const items = getItems();
@@ -2132,9 +2184,21 @@ function executeImport() {
 
 function clearAllData() {
   if (confirm('全データを削除しますか？この操作は元に戻せません。')) {
-    localStorage.removeItem(DB_KEY);
-    toast('🗑️ データを削除しました');
-    renderPage(currentPage);
+    db.collection('inventory').get().then(snapshot => {
+      const batch = db.batch();
+      snapshot.docs.forEach(doc => batch.delete(doc.ref));
+      return batch.commit();
+    }).then(() => {
+      _items = [];
+      _firestoreItemIds = new Set();
+      toast('🗑️ データを削除しました');
+      renderPage(currentPage);
+    }).catch(err => {
+      console.error(err);
+      localStorage.removeItem(DB_KEY);
+      toast('🗑️ データを削除しました');
+      renderPage(currentPage);
+    });
   }
 }
 
@@ -2145,6 +2209,7 @@ function fmt(n) {
 }
 
 // ==================== INIT ====================
+initFirestore(); // Firestore接続＆リアルタイム同期開始
 navigateTo('dashboard');
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));
