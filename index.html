@@ -2148,10 +2148,14 @@ function fmt(n) {
 }
 
 // ==================== INIT ====================
-initFirestore(); // Firestore接続＆リアルタイム同期開始
+initFirestore();
 navigateTo('dashboard');
+// 古いサービスワーカーを全て解除してリセット
 if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => r.unregister());
+  });
+  caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
 }
 </script>
 </body>
