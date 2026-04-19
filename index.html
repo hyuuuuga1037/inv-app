@@ -498,8 +498,6 @@
 <!-- Toast -->
 <div id="toast"></div>
 
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
 // ==================== SHIPPING MASTER ====================
 const SHIPPING_DATA = [
@@ -554,86 +552,12 @@ function commissionRateOptions(selectedRate) {
 const DB_KEY = 'apparel_items';
 const SETTINGS_KEY = 'apparel_settings';
 
-// ── Firebase 設定 ──
-let db = null;
-let _items = [];
-let _firestoreItemIds = new Set();
-let _firestoreReady = false;
-let _migrated = false;
-let _useFirestore = false;
-
-try {
-  const firebaseConfig = {
-    apiKey: "AIzaSyDCK9lsBJsc-UxzxcfxMPdJS94V1gZb2k8",
-    authDomain: "hs-tools-86dab.firebaseapp.com",
-    projectId: "hs-tools-86dab",
-    storageBucket: "hs-tools-86dab.firebasestorage.app",
-    messagingSenderId: "755265926130",
-    appId: "1:755265926130:web:257584deb277fc7ce3716b"
-  };
-  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-  db = firebase.firestore();
-  _useFirestore = true;
-} catch(e) {
-  console.warn('Firebase初期化失敗、ローカルモードで動作:', e);
+function getItems() {
+  const d = localStorage.getItem(DB_KEY);
+  return d ? JSON.parse(d) : [];
 }
-
-function initFirestore() {
-  if (!_useFirestore || !db) {
-    // Firebaseが使えない場合はlocalStorageで動作
-    const d = localStorage.getItem(DB_KEY);
-    _items = d ? JSON.parse(d) : [];
-    _firestoreReady = true;
-    return;
-  }
-  db.collection('inventory').onSnapshot(snapshot => {
-    const serverItems = snapshot.docs.map(doc => doc.data());
-    _firestoreItemIds = new Set(snapshot.docs.map(doc => doc.id));
-    _firestoreReady = true;
-    // 初回のみ：Firestoreが空でlocalStorageにデータがあれば自動移行
-    if (serverItems.length === 0 && !_migrated) {
-      _migrated = true;
-      const local = localStorage.getItem(DB_KEY);
-      if (local) {
-        const localItems = JSON.parse(local);
-        if (localItems.length > 0) {
-          saveItems(localItems);
-          toast('✅ 既存データをクラウドに移行しました');
-          return;
-        }
-      }
-    }
-    _migrated = true;
-    _items = serverItems;
-    if (typeof currentPage !== 'undefined') renderPage(currentPage);
-  }, err => {
-    console.error('Firestore接続エラー:', err);
-    const d = localStorage.getItem(DB_KEY);
-    _items = d ? JSON.parse(d) : [];
-    _firestoreReady = true;
-    if (typeof currentPage !== 'undefined') renderPage(currentPage);
-  });
-}
-
-function getItems() { return _items; }
-
-function saveItems(items) {
-  _items = items;
-  localStorage.setItem(DB_KEY, JSON.stringify(items)); // 常にlocalStorageにも保存
-  if (!_useFirestore || !db) return;
-  const batch = db.batch();
-  const colRef = db.collection('inventory');
-  const newIds = new Set(items.map(i => String(i.id)));
-  _firestoreItemIds.forEach(id => {
-    if (!newIds.has(id)) batch.delete(colRef.doc(id));
-  });
-  items.forEach(item => batch.set(colRef.doc(String(item.id)), item));
-  batch.commit().then(() => {
-    _firestoreItemIds = newIds;
-  }).catch(err => {
-    console.error('Firestore書き込みエラー:', err);
-  });
-}
+function saveItems(items) { localStorage.setItem(DB_KEY, JSON.stringify(items)); }
+function initFirestore() {} // 将来のFirebase用（現在は未使用）
 
 const DEFAULT_SETTINGS = {
   purchaseSources: [
@@ -2212,7 +2136,23 @@ function executeImport() {
 function clearAllData() {
   if (confirm('全データを削除しますか？この操作は元に戻せません。')) {
     localStorage.removeItem(DB_KEY);
-    _items = [];
-    _firestoreItemIds = new Set();
-    if (_useFirestore && db) {
- 
+    toast('🗑️ データを削除しました');
+    renderPage(currentPage);
+  }
+}
+
+// ==================== UTILS ====================
+function fmt(n) {
+  if (n===null||n===undefined) return '0';
+  return Math.round(n).toLocaleString('ja-JP');
+}
+
+// ==================== INIT ====================
+initFirestore(); // Firestore接続＆リアルタイム同期開始
+navigateTo('dashboard');
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));
+}
+</script>
+</body>
+</html>
