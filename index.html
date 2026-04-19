@@ -555,29 +555,42 @@ const DB_KEY = 'apparel_items';
 const SETTINGS_KEY = 'apparel_settings';
 
 // ── Firebase 設定 ──
-const firebaseConfig = {
-  apiKey: "AIzaSyDCK9lsBJsc-UxzxcfxMPdJS94V1gZb2k8",
-  authDomain: "hs-tools-86dab.firebaseapp.com",
-  projectId: "hs-tools-86dab",
-  storageBucket: "hs-tools-86dab.firebasestorage.app",
-  messagingSenderId: "755265926130",
-  appId: "1:755265926130:web:257584deb277fc7ce3716b"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-
-// ローカルキャッシュ
+let db = null;
 let _items = [];
 let _firestoreItemIds = new Set();
 let _firestoreReady = false;
+let _migrated = false;
+let _useFirestore = false;
+
+try {
+  const firebaseConfig = {
+    apiKey: "AIzaSyDCK9lsBJsc-UxzxcfxMPdJS94V1gZb2k8",
+    authDomain: "hs-tools-86dab.firebaseapp.com",
+    projectId: "hs-tools-86dab",
+    storageBucket: "hs-tools-86dab.firebasestorage.app",
+    messagingSenderId: "755265926130",
+    appId: "1:755265926130:web:257584deb277fc7ce3716b"
+  };
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  _useFirestore = true;
+} catch(e) {
+  console.warn('Firebase初期化失敗、ローカルモードで動作:', e);
+}
 
 function initFirestore() {
+  if (!_useFirestore || !db) {
+    // Firebaseが使えない場合はlocalStorageで動作
+    const d = localStorage.getItem(DB_KEY);
+    _items = d ? JSON.parse(d) : [];
+    _firestoreReady = true;
+    return;
+  }
   db.collection('inventory').onSnapshot(snapshot => {
     const serverItems = snapshot.docs.map(doc => doc.data());
     _firestoreItemIds = new Set(snapshot.docs.map(doc => doc.id));
     _firestoreReady = true;
-
-    // ── 初回のみ：Firestoreが空でlocalStorageにデータがあれば自動移行 ──
+    // 初回のみ：Firestoreが空でlocalStorageにデータがあれば自動移行
     if (serverItems.length === 0 && !_migrated) {
       _migrated = true;
       const local = localStorage.getItem(DB_KEY);
@@ -601,26 +614,24 @@ function initFirestore() {
     if (typeof currentPage !== 'undefined') renderPage(currentPage);
   });
 }
-let _migrated = false;
 
 function getItems() { return _items; }
 
 function saveItems(items) {
-  _items = items; // ローカルを即時更新（UI即応）
+  _items = items;
+  localStorage.setItem(DB_KEY, JSON.stringify(items)); // 常にlocalStorageにも保存
+  if (!_useFirestore || !db) return;
   const batch = db.batch();
   const colRef = db.collection('inventory');
   const newIds = new Set(items.map(i => String(i.id)));
-  // 削除されたアイテムをFirestoreから消す
   _firestoreItemIds.forEach(id => {
     if (!newIds.has(id)) batch.delete(colRef.doc(id));
   });
-  // 全アイテムをセット（追加・更新）
   items.forEach(item => batch.set(colRef.doc(String(item.id)), item));
   batch.commit().then(() => {
     _firestoreItemIds = newIds;
   }).catch(err => {
     console.error('Firestore書き込みエラー:', err);
-    localStorage.setItem(DB_KEY, JSON.stringify(items)); // フォールバック
   });
 }
 
@@ -2200,17 +2211,8 @@ function executeImport() {
 
 function clearAllData() {
   if (confirm('全データを削除しますか？この操作は元に戻せません。')) {
-    db.collection('inventory').get().then(snapshot => {
-      const batch = db.batch();
-      snapshot.docs.forEach(doc => batch.delete(doc.ref));
-      return batch.commit();
-    }).then(() => {
-      _items = [];
-      _firestoreItemIds = new Set();
-      toast('🗑️ データを削除しました');
-      renderPage(currentPage);
-    }).catch(err => {
-      console.error(err);
-      localStorage.removeItem(DB_KEY);
-      toast('🗑️ データを削除しました');
-      renderPage
+    localStorage.removeItem(DB_KEY);
+    _items = [];
+    _firestoreItemIds = new Set();
+    if (_useFirestore && db) {
+ 
