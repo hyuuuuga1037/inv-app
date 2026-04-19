@@ -557,7 +557,6 @@ function getItems() {
   return d ? JSON.parse(d) : [];
 }
 function saveItems(items) { localStorage.setItem(DB_KEY, JSON.stringify(items)); }
-function initFirestore() {} // 将来のFirebase用（現在は未使用）
 
 const DEFAULT_SETTINGS = {
   purchaseSources: [
@@ -2148,14 +2147,9 @@ function fmt(n) {
 }
 
 // ==================== INIT ====================
-initFirestore();
 navigateTo('dashboard');
-// 古いサービスワーカーを全て解除してリセット
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(r => r.unregister());
-  });
-  caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));
 }
 </script>
 </body>
