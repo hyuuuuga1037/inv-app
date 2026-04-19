@@ -573,19 +573,35 @@ let _firestoreReady = false;
 
 function initFirestore() {
   db.collection('inventory').onSnapshot(snapshot => {
-    _items = snapshot.docs.map(doc => doc.data());
+    const serverItems = snapshot.docs.map(doc => doc.data());
     _firestoreItemIds = new Set(snapshot.docs.map(doc => doc.id));
     _firestoreReady = true;
+
+    // ── 初回のみ：Firestoreが空でlocalStorageにデータがあれば自動移行 ──
+    if (serverItems.length === 0 && !_migrated) {
+      _migrated = true;
+      const local = localStorage.getItem(DB_KEY);
+      if (local) {
+        const localItems = JSON.parse(local);
+        if (localItems.length > 0) {
+          saveItems(localItems);
+          toast('✅ 既存データをクラウドに移行しました');
+          return;
+        }
+      }
+    }
+    _migrated = true;
+    _items = serverItems;
     if (typeof currentPage !== 'undefined') renderPage(currentPage);
   }, err => {
     console.error('Firestore接続エラー:', err);
-    // ローカルストレージにフォールバック
     const d = localStorage.getItem(DB_KEY);
     _items = d ? JSON.parse(d) : [];
     _firestoreReady = true;
     if (typeof currentPage !== 'undefined') renderPage(currentPage);
   });
 }
+let _migrated = false;
 
 function getItems() { return _items; }
 
@@ -2197,23 +2213,4 @@ function clearAllData() {
       console.error(err);
       localStorage.removeItem(DB_KEY);
       toast('🗑️ データを削除しました');
-      renderPage(currentPage);
-    });
-  }
-}
-
-// ==================== UTILS ====================
-function fmt(n) {
-  if (n===null||n===undefined) return '0';
-  return Math.round(n).toLocaleString('ja-JP');
-}
-
-// ==================== INIT ====================
-initFirestore(); // Firestore接続＆リアルタイム同期開始
-navigateTo('dashboard');
-if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));
-}
-</script>
-</body>
-</html>
+      renderPage
