@@ -2204,7 +2204,7 @@ function executeImport() {
   navigateTo('inventory');
 }
 
-function forceSyncNow() {
+async function forceSyncNow() {
   const btn = document.getElementById('sync-btn');
   const status = document.getElementById('sync-status');
   if (!_db) {
@@ -2213,23 +2213,22 @@ function forceSyncNow() {
     return;
   }
   btn.disabled = true;
-  status.textContent = '送信中...';
   status.style.color = 'var(--gray-500)';
   const items = getItems();
+  const col = _db.collection('inventory');
+  const CHUNK = 100;
   try {
-    const batch = _db.batch();
-    const col = _db.collection('inventory');
-    items.forEach(item => batch.set(col.doc(String(item.id)), item));
-    batch.commit().then(() => {
-      _fsIds = new Set(items.map(i => String(i.id)));
-      btn.disabled = false;
-      status.textContent = '✅ 同期完了（' + items.length + '件）';
-      status.style.color = 'green';
-    }).catch(e => {
-      btn.disabled = false;
-      status.textContent = '❌ エラー: ' + e.message;
-      status.style.color = 'var(--danger)';
-    });
+    for (let i = 0; i < items.length; i += CHUNK) {
+      const chunk = items.slice(i, i + CHUNK);
+      const batch = _db.batch();
+      chunk.forEach(item => batch.set(col.doc(String(item.id)), item));
+      status.textContent = `送信中... ${Math.min(i + CHUNK, items.length)}/${items.length}件`;
+      await batch.commit();
+    }
+    _fsIds = new Set(items.map(i => String(i.id)));
+    btn.disabled = false;
+    status.textContent = '✅ 同期完了（' + items.length + '件）';
+    status.style.color = 'green';
   } catch(e) {
     btn.disabled = false;
     status.textContent = '❌ エラー: ' + e.message;
