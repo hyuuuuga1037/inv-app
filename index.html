@@ -568,15 +568,33 @@ function saveItems(items) {
 let _db = null;
 let _fsIds = new Set();
 
+// undefinedやNaNを除去してFirestoreに安全なオブジェクトに変換
+function _cleanItem(item) {
+  const out = {};
+  Object.keys(item).forEach(k => {
+    const v = item[k];
+    if (v === undefined || v === null) return;
+    if (typeof v === 'number' && (isNaN(v) || !isFinite(v))) return;
+    out[k] = v;
+  });
+  return out;
+}
+
 function _syncToFirestore(items) {
   if (!_db) return;
   try {
-    const batch = _db.batch();
     const col = _db.collection('inventory');
     const newIds = new Set(items.map(i => String(i.id)));
-    _fsIds.forEach(id => { if (!newIds.has(id)) batch.delete(col.doc(id)); });
-    items.forEach(item => batch.set(col.doc(String(item.id)), item));
-    batch.commit().then(() => { _fsIds = newIds; }).catch(e => console.warn(e));
+    // 削除
+    _fsIds.forEach(id => { if (!newIds.has(id)) _db.collection('inventory').doc(id).delete().catch(()=>{}); });
+    // 追加・更新（100件ずつ）
+    const CHUNK = 100;
+    for (let i = 0; i < items.length; i += CHUNK) {
+      const batch = _db.batch();
+      items.slice(i, i + CHUNK).forEach(item => batch.set(col.doc(String(item.id)), _cleanItem(item)));
+      batch.commit().catch(e => console.warn('sync chunk error:', e));
+    }
+    _fsIds = newIds;
   } catch(e) { console.warn(e); }
 }
 
@@ -2213,21 +2231,33 @@ async function forceSyncNow() {
     return;
   }
   btn.disabled = true;
+  status.textContent = '確認中...';
   status.style.color = 'var(--gray-500)';
-  const items = getItems();
-  const col = _db.collection('inventory');
-  const CHUNK = 100;
   try {
-    for (let i = 0; i < items.length; i += CHUNK) {
-      const chunk = items.slice(i, i + CHUNK);
-      const batch = _db.batch();
-      chunk.forEach(item => batch.set(col.doc(String(item.id)), item));
-      status.textContent = `送信中... ${Math.min(i + CHUNK, items.length)}/${items.length}件`;
-      await batch.commit();
+    // Firestoreにある既存IDを取得
+    const snapshot = await _db.collection('inventory').get();
+    const fsIds = new Set(snapshot.docs.map(d => d.id));
+    // ローカルにあってFirestoreにない新規アイテムだけ抽出
+    const allItems = getItems();
+    const newItems = allItems.filter(i => !fsIds.has(String(i.id)));
+    if (newItems.length === 0) {
+      btn.disabled = false;
+      status.textContent = '✅ 既に同期済みです';
+      status.style.color = 'green';
+      return;
     }
-    _fsIds = new Set(items.map(i => String(i.id)));
+    status.textContent = `送信中... 0/${newItems.length}件`;
+    const col = _db.collection('inventory');
+    const CHUNK = 100;
+    for (let i = 0; i < newItems.length; i += CHUNK) {
+      const chunk = newItems.slice(i, i + CHUNK);
+      const batch = _db.batch();
+      chunk.forEach(item => batch.set(col.doc(String(item.id)), _cleanItem(item)));
+      await batch.commit();
+      status.textContent = `送信中... ${Math.min(i + CHUNK, newItems.length)}/${newItems.length}件`;
+    }
     btn.disabled = false;
-    status.textContent = '✅ 同期完了（' + items.length + '件）';
+    status.textContent = `✅ 同期完了（新規${newItems.length}件）`;
     status.style.color = 'green';
   } catch(e) {
     btn.disabled = false;
