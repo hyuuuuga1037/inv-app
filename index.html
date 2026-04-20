@@ -2216,7 +2216,7 @@ function fmt(n) {
 navigateTo('dashboard'); // まずlocalStorageで即表示
 initFirebase();          // その後Firebaseで同期（非同期・失敗しても問題なし）
 if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js'));
+  navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister()));
 }
 </script>
 </body>
