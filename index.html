@@ -579,6 +579,8 @@ function _syncToFirestore(items) {
   } catch(e) { console.warn(e); }
 }
 
+let _initialSyncDone = false;
+
 function initFirebase() {
   try {
     const cfg = {
@@ -593,14 +595,23 @@ function initFirebase() {
     _db = firebase.firestore();
     _db.collection('inventory').onSnapshot(snapshot => {
       if (snapshot.metadata.hasPendingWrites) return;
-      const items = snapshot.docs.map(d => d.data());
+      const fsItems = snapshot.docs.map(d => d.data());
       _fsIds = new Set(snapshot.docs.map(d => d.id));
-      if (items.length === 0) {
-        // Firestoreが空→PCのlocalStorageデータを移行
+      // 初回ロード時：localStorageのデータをFirestoreへ送る（PCの最新データを優先）
+      if (!_initialSyncDone) {
+        _initialSyncDone = true;
         const local = localStorage.getItem(DB_KEY);
-        if (local) { const arr = JSON.parse(local); if (arr.length) _syncToFirestore(arr); }
-      } else {
-        localStorage.setItem(DB_KEY, JSON.stringify(items));
+        if (local) {
+          const localItems = JSON.parse(local);
+          if (localItems.length > 0) {
+            _syncToFirestore(localItems);
+            return;
+          }
+        }
+      }
+      // 2回目以降：Firestoreのデータをlocalに反映（他デバイスの変更を受信）
+      if (fsItems.length > 0) {
+        localStorage.setItem(DB_KEY, JSON.stringify(fsItems));
         renderPage(currentPage);
       }
     }, e => console.warn('Firestore:', e));
