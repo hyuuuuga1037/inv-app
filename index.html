@@ -597,21 +597,30 @@ function initFirebase() {
       if (snapshot.metadata.hasPendingWrites) return;
       const fsItems = snapshot.docs.map(d => d.data());
       _fsIds = new Set(snapshot.docs.map(d => d.id));
-      // 初回ロード時：localStorageのデータをFirestoreへ送る（PCの最新データを優先）
+      // 初回ロード：ローカルとFirestoreをマージして両方のデータを保持
       if (!_initialSyncDone) {
         _initialSyncDone = true;
         const local = localStorage.getItem(DB_KEY);
-        if (local) {
-          const localItems = JSON.parse(local);
-          if (localItems.length > 0) {
-            _syncToFirestore(localItems);
-            return;
-          }
-        }
+        const localItems = local ? JSON.parse(local) : [];
+        // マージ：同じIDはローカル優先、どちらにしかないものも全て残す
+        const merged = new Map();
+        fsItems.forEach(item => merged.set(String(item.id), item));
+        localItems.forEach(item => merged.set(String(item.id), item));
+        const mergedArr = Array.from(merged.values());
+        localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
+        _syncToFirestore(mergedArr);
+        renderPage(currentPage);
+        return;
       }
-      // 2回目以降：Firestoreのデータをlocalに反映（他デバイスの変更を受信）
+      // 2回目以降：他デバイスの変更を受信（自分の変更は除外）
       if (fsItems.length > 0) {
-        localStorage.setItem(DB_KEY, JSON.stringify(fsItems));
+        const local = localStorage.getItem(DB_KEY);
+        const localItems = local ? JSON.parse(local) : [];
+        const merged = new Map();
+        fsItems.forEach(item => merged.set(String(item.id), item));
+        localItems.forEach(item => merged.set(String(item.id), item));
+        const mergedArr = Array.from(merged.values());
+        localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
         renderPage(currentPage);
       }
     }, e => console.warn('Firestore:', e));
