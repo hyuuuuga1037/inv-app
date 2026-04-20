@@ -1880,6 +1880,12 @@ function renderSettings(el) {
       ${renderSettingSection('配送方法', s.shippingMethods, 'shippingMethods')}
     </div>
     <div class="card" style="margin-top:16px">
+      <div class="card-title" style="color:var(--primary)">🔄 クラウド同期</div>
+      <p style="font-size:13px;color:var(--gray-500);margin-bottom:12px">スマホで入力したデータがPCに反映されない場合、このボタンを押してください。</p>
+      <button class="btn btn-primary" onclick="forceSyncNow()" id="sync-btn">☁️ 今すぐ同期する</button>
+      <span id="sync-status" style="margin-left:12px;font-size:13px;color:var(--gray-500)"></span>
+    </div>
+    <div class="card" style="margin-top:16px">
       <div class="card-title" style="color:var(--danger)">データ管理</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn btn-outline" onclick="exportCSV()">📥 全データCSV出力</button>
@@ -2196,6 +2202,39 @@ function executeImport() {
   closeImportModal();
   toast(`✅ インポート完了：新規 ${added}件、更新 ${updated}件`);
   navigateTo('inventory');
+}
+
+function forceSyncNow() {
+  const btn = document.getElementById('sync-btn');
+  const status = document.getElementById('sync-status');
+  if (!_db) {
+    status.textContent = '❌ Firebase未接続。ページを再読み込みしてください。';
+    status.style.color = 'var(--danger)';
+    return;
+  }
+  btn.disabled = true;
+  status.textContent = '送信中...';
+  status.style.color = 'var(--gray-500)';
+  const items = getItems();
+  try {
+    const batch = _db.batch();
+    const col = _db.collection('inventory');
+    items.forEach(item => batch.set(col.doc(String(item.id)), item));
+    batch.commit().then(() => {
+      _fsIds = new Set(items.map(i => String(i.id)));
+      btn.disabled = false;
+      status.textContent = '✅ 同期完了（' + items.length + '件）';
+      status.style.color = 'green';
+    }).catch(e => {
+      btn.disabled = false;
+      status.textContent = '❌ エラー: ' + e.message;
+      status.style.color = 'var(--danger)';
+    });
+  } catch(e) {
+    btn.disabled = false;
+    status.textContent = '❌ エラー: ' + e.message;
+    status.style.color = 'var(--danger)';
+  }
 }
 
 function clearAllData() {
