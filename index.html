@@ -613,31 +613,30 @@ function initFirebase() {
     if (!firebase.apps.length) firebase.initializeApp(cfg);
     _db = firebase.firestore();
     _db.collection('inventory').onSnapshot(snapshot => {
+      if (snapshot.metadata.fromCache) return;
       const fsItems = snapshot.docs.map(d => d.data());
       _fsIds = new Set(snapshot.docs.map(d => d.id));
       const local = localStorage.getItem(DB_KEY);
       const localItems = local ? JSON.parse(local) : [];
+      // Firestoreにないローカル独自アイテムを保持
+      const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
+      const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
+      // Firestoreのデータ（更新含む）＋ローカル独自アイテム
+      const mergedArr = [...fsItems, ...localOnly];
       if (!_initialSyncDone) {
-        // 初回：サーバー確認済みデータが来るまで待つ
         if (snapshot.metadata.hasPendingWrites) return;
         _initialSyncDone = true;
-        const merged = new Map();
-        fsItems.forEach(item => merged.set(String(item.id), item));
-        localItems.forEach(item => merged.set(String(item.id), item));
-        const mergedArr = Array.from(merged.values());
         localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
-        _syncToFirestore(mergedArr);
+        // ローカル独自アイテムをFirestoreに送信
+        if (localOnly.length > 0) _syncToFirestore(mergedArr);
         renderPage(currentPage);
         return;
       }
-      // 2回目以降：他デバイスで追加された新規アイテムのみ取り込む
-      const localIds = new Set(localItems.map(i => String(i.id)));
-      const newFromFs = fsItems.filter(i => !localIds.has(String(i.id)));
-      if (newFromFs.length > 0) {
-        const mergedArr = [...localItems, ...newFromFs];
-        localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
-        renderPage(currentPage);
-      }
+      // 他デバイスの変更（新規追加・ステータス変更）を反映
+      localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
+      // このデバイス独自のアイテムをFirestoreに送信
+      if (localOnly.length > 0) _syncToFirestore(mergedArr);
+      renderPage(currentPage);
     }, e => console.warn('Firestore:', e));
   } catch(e) { console.warn('Firebase init error:', e); }
 }
@@ -2234,30 +2233,22 @@ async function forceSyncNow() {
   status.textContent = '確認中...';
   status.style.color = 'var(--gray-500)';
   try {
-    // Firestoreにある既存IDを取得
-    const snapshot = await _db.collection('inventory').get();
-    const fsIds = new Set(snapshot.docs.map(d => d.id));
-    // ローカルにあってFirestoreにない新規アイテムだけ抽出
     const allItems = getItems();
-    const newItems = allItems.filter(i => !fsIds.has(String(i.id)));
-    if (newItems.length === 0) {
-      btn.disabled = false;
-      status.textContent = '✅ 既に同期済みです';
-      status.style.color = 'green';
-      return;
-    }
-    status.textContent = `送信中... 0/${newItems.length}件`;
+    status.textContent = `送信中... 0/${allItems.length}件`;
     const col = _db.collection('inventory');
-    const CHUNK = 100;
-    for (let i = 0; i < newItems.length; i += CHUNK) {
-      const chunk = newItems.slice(i, i + CHUNK);
+    const CHUNK = 50;
+    for (let i = 0; i < allItems.length; i += CHUNK) {
+      const chunk = allItems.slice(i, i + CHUNK);
       const batch = _db.batch();
       chunk.forEach(item => batch.set(col.doc(String(item.id)), _cleanItem(item)));
-      await batch.commit();
-      status.textContent = `送信中... ${Math.min(i + CHUNK, newItems.length)}/${newItems.length}件`;
+      await Promise.race([
+        batch.commit(),
+        new Promise((_,rej) => setTimeout(()=>rej(new Error('タイムアウト')), 30000))
+      ]);
+      status.textContent = `送信中... ${Math.min(i + CHUNK, allItems.length)}/${allItems.length}件`;
     }
     btn.disabled = false;
-    status.textContent = `✅ 同期完了（新規${newItems.length}件）`;
+    status.textContent = `✅ 同期完了（${allItems.length}件）`;
     status.style.color = 'green';
   } catch(e) {
     btn.disabled = false;
