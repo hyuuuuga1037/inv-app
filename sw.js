@@ -1,4 +1,4 @@
-const CACHE = 'inv-app-v5';
+const CACHE = 'inv-app-v6';
 const ASSETS = ['./index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {

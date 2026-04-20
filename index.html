@@ -72,10 +72,11 @@
   #mobile-nav {
     display: none; position: fixed; bottom: 0; left: 0; right: 0;
     background: white; border-top: 1px solid var(--gray-200);
-    height: calc(var(--nav-height) + env(safe-area-inset-bottom));
-    padding-bottom: env(safe-area-inset-bottom);
+    height: calc(var(--nav-height) + max(env(safe-area-inset-bottom, 0px), 34px));
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 34px);
     z-index: 100; padding-left: 4px; padding-right: 4px;
-    justify-content: space-around; align-items: center;
+    justify-content: space-around; align-items: flex-start;
+    padding-top: 4px;
   }
   #mobile-nav a {
     display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -87,7 +88,7 @@
 
   @media (max-width: 768px) {
     #sidebar { display: none; }
-    #main { margin-left: 0; padding: 16px; max-width: 100%; padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 16px); }
+    #main { margin-left: 0; padding: 16px; max-width: 100%; padding-bottom: calc(var(--nav-height) + max(env(safe-area-inset-bottom, 0px), 34px) + 16px); }
     #mobile-nav { display: flex; }
     #page-header h1 { font-size: 18px; }
   }
@@ -594,15 +595,14 @@ function initFirebase() {
     if (!firebase.apps.length) firebase.initializeApp(cfg);
     _db = firebase.firestore();
     _db.collection('inventory').onSnapshot(snapshot => {
-      if (snapshot.metadata.hasPendingWrites) return;
       const fsItems = snapshot.docs.map(d => d.data());
       _fsIds = new Set(snapshot.docs.map(d => d.id));
-      // 初回ロード：ローカルとFirestoreをマージして両方のデータを保持
+      const local = localStorage.getItem(DB_KEY);
+      const localItems = local ? JSON.parse(local) : [];
       if (!_initialSyncDone) {
+        // 初回：サーバー確認済みデータが来るまで待つ
+        if (snapshot.metadata.hasPendingWrites) return;
         _initialSyncDone = true;
-        const local = localStorage.getItem(DB_KEY);
-        const localItems = local ? JSON.parse(local) : [];
-        // マージ：同じIDはローカル優先、どちらにしかないものも全て残す
         const merged = new Map();
         fsItems.forEach(item => merged.set(String(item.id), item));
         localItems.forEach(item => merged.set(String(item.id), item));
@@ -612,14 +612,11 @@ function initFirebase() {
         renderPage(currentPage);
         return;
       }
-      // 2回目以降：他デバイスの変更を受信（自分の変更は除外）
-      if (fsItems.length > 0) {
-        const local = localStorage.getItem(DB_KEY);
-        const localItems = local ? JSON.parse(local) : [];
-        const merged = new Map();
-        fsItems.forEach(item => merged.set(String(item.id), item));
-        localItems.forEach(item => merged.set(String(item.id), item));
-        const mergedArr = Array.from(merged.values());
+      // 2回目以降：他デバイスで追加された新規アイテムのみ取り込む
+      const localIds = new Set(localItems.map(i => String(i.id)));
+      const newFromFs = fsItems.filter(i => !localIds.has(String(i.id)));
+      if (newFromFs.length > 0) {
+        const mergedArr = [...localItems, ...newFromFs];
         localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
         renderPage(currentPage);
       }
