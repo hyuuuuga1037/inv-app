@@ -580,19 +580,32 @@ function _cleanItem(item) {
   return out;
 }
 
-function _syncToFirestore(items) {
-  if (!_db) return;
+const _FS_API_KEY = 'AIzaSyDCK9lsBJsc-UxzxcfxMPdJS94V1gZb2k8';
+const _FS_PROJECT = 'hs-tools-86dab';
+const _FS_BASE = `https://firestore.googleapis.com/v1/projects/${_FS_PROJECT}/databases/(default)/documents`;
+
+async function _syncToFirestore(items) {
   try {
-    const col = _db.collection('inventory');
     const newIds = new Set(items.map(i => String(i.id)));
     // 削除
-    _fsIds.forEach(id => { if (!newIds.has(id)) _db.collection('inventory').doc(id).delete().catch(()=>{}); });
-    // 追加・更新（100件ずつ）
-    const CHUNK = 100;
+    for (const id of _fsIds) {
+      if (!newIds.has(id)) {
+        fetch(`${_FS_BASE}/inventory/${id}?key=${_FS_API_KEY}`, {method:'DELETE'}).catch(()=>{});
+      }
+    }
+    // 追加・更新（20件ずつ）
+    const CHUNK = 20;
     for (let i = 0; i < items.length; i += CHUNK) {
-      const batch = _db.batch();
-      items.slice(i, i + CHUNK).forEach(item => batch.set(col.doc(String(item.id)), _cleanItem(item)));
-      batch.commit().catch(e => console.warn('sync chunk error:', e));
+      const writes = items.slice(i, i+CHUNK).map(item => ({
+        update: {
+          name: `projects/${_FS_PROJECT}/databases/(default)/documents/inventory/${String(item.id)}`,
+          fields: _toFsFields(_cleanItem(item))
+        }
+      }));
+      fetch(`${_FS_BASE}:batchWrite?key=${_FS_API_KEY}`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({writes})
+      }).catch(e => console.warn('sync error:', e));
     }
     _fsIds = newIds;
   } catch(e) { console.warn(e); }
@@ -613,7 +626,6 @@ function initFirebase() {
     if (!firebase.apps.length) firebase.initializeApp(cfg);
     _db = firebase.firestore();
     _db.collection('inventory').onSnapshot(snapshot => {
-      if (snapshot.metadata.fromCache) return;
       const fsItems = snapshot.docs.map(d => d.data());
       _fsIds = new Set(snapshot.docs.map(d => d.id));
       const local = localStorage.getItem(DB_KEY);
@@ -2221,31 +2233,45 @@ function executeImport() {
   navigateTo('inventory');
 }
 
+function _toFsVal(v) {
+  if (typeof v === 'string') return {stringValue: v};
+  if (typeof v === 'boolean') return {booleanValue: v};
+  if (typeof v === 'number' && !isNaN(v) && isFinite(v)) {
+    return Number.isInteger(v) ? {integerValue: String(v)} : {doubleValue: v};
+  }
+  return null;
+}
+function _toFsFields(obj) {
+  const f = {};
+  Object.entries(obj).forEach(([k,v]) => { const fv=_toFsVal(v); if(fv) f[k]=fv; });
+  return f;
+}
+
 async function forceSyncNow() {
   const btn = document.getElementById('sync-btn');
   const status = document.getElementById('sync-status');
-  if (!_db) {
-    status.textContent = '❌ Firebase未接続。ページを再読み込みしてください。';
-    status.style.color = 'var(--danger)';
-    return;
-  }
   btn.disabled = true;
-  status.textContent = '確認中...';
   status.style.color = 'var(--gray-500)';
+  const API_KEY = 'AIzaSyDCK9lsBJsc-UxzxcfxMPdJS94V1gZb2k8';
+  const PROJECT = 'hs-tools-86dab';
+  const BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
   try {
     const allItems = getItems();
-    status.textContent = `送信中... 0/${allItems.length}件`;
-    const col = _db.collection('inventory');
-    const CHUNK = 50;
+    const CHUNK = 20;
     for (let i = 0; i < allItems.length; i += CHUNK) {
-      const chunk = allItems.slice(i, i + CHUNK);
-      const batch = _db.batch();
-      chunk.forEach(item => batch.set(col.doc(String(item.id)), _cleanItem(item)));
-      await Promise.race([
-        batch.commit(),
-        new Promise((_,rej) => setTimeout(()=>rej(new Error('タイムアウト')), 30000))
-      ]);
-      status.textContent = `送信中... ${Math.min(i + CHUNK, allItems.length)}/${allItems.length}件`;
+      const writes = allItems.slice(i, i+CHUNK).map(item => {
+        const clean = _cleanItem(item);
+        return {update: {
+          name: `projects/${PROJECT}/databases/(default)/documents/inventory/${String(item.id)}`,
+          fields: _toFsFields(clean)
+        }};
+      });
+      const resp = await fetch(`${BASE}:batchWrite?key=${API_KEY}`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({writes})
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      status.textContent = `送信中... ${Math.min(i+CHUNK, allItems.length)}/${allItems.length}件`;
     }
     btn.disabled = false;
     status.textContent = `✅ 同期完了（${allItems.length}件）`;
