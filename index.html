@@ -559,63 +559,72 @@ function getItems() {
   const d = localStorage.getItem(DB_KEY);
   return d ? JSON.parse(d) : [];
 }
+
 function saveItems(items) {
-  // 変更されたアイテムには_updatedAtタイムスタンプを付与（新旧デバイス間の競合解決用）
-  const existing = getItems();
-  const existingMap = new Map(existing.map(i => [String(i.id), i]));
+  // 変更されたアイテムに更新タイムスタンプを付与（他デバイスとの競合解決用）
+  const prev = getItems();
+  const prevMap = new Map(prev.map(i => [String(i.id), i]));
   const now = Date.now();
-  const withTs = items.map(i => {
-    const old = existingMap.get(String(i.id));
-    // _updatedAtを除いた内容が変わった場合、またはnewアイテムの場合はタイムスタンプ更新
-    const oldCmp = old ? JSON.stringify({...old, _updatedAt: undefined}) : null;
-    const newCmp = JSON.stringify({...i, _updatedAt: undefined});
-    if (!old || oldCmp !== newCmp) return {...i, _updatedAt: now};
-    return {...i, _updatedAt: old._updatedAt || now};
+  const stamped = items.map(item => {
+    const old = prevMap.get(String(item.id));
+    const changed = !old ||
+      JSON.stringify({...old, _updatedAt: 0}) !== JSON.stringify({...item, _updatedAt: 0});
+    return {...item, _updatedAt: changed ? now : (item._updatedAt || now)};
   });
-  localStorage.setItem(DB_KEY, JSON.stringify(withTs));
-  _syncToFirestore(withTs);
+  localStorage.setItem(DB_KEY, JSON.stringify(stamped));
+  _push(stamped); // Firestoreに非同期送信
 }
 
-// ── Firebase（非同期・後付け同期） ──
+// ── Firebase Sync ──
 let _db = null;
 let _fsIds = new Set();
+let _syncBusy = false; // 手動同期中フラグ（onSnapshotの再描画を抑制）
 
-function _setSyncDot(color, title) {
-  const dot = document.getElementById('sync-dot');
-  if (dot) { dot.style.background = color; dot.title = title; }
+function _dot(color, msg) {
+  const el = document.getElementById('sync-dot');
+  if (el) { el.style.background = color; el.title = msg; }
 }
 
-// undefinedやNaNを除去してFirestoreに安全なオブジェクトに変換
-function _cleanItem(item) {
+function _clean(item) {
+  // Firestoreに書けない値（undefined/null/NaN/Infinity）を除去
   const out = {};
-  Object.keys(item).forEach(k => {
+  for (const k of Object.keys(item)) {
     const v = item[k];
-    if (v === undefined || v === null) return;
-    if (typeof v === 'number' && (isNaN(v) || !isFinite(v))) return;
+    if (v === undefined || v === null) continue;
+    if (typeof v === 'number' && (!isFinite(v) || isNaN(v))) continue;
     out[k] = v;
-  });
+  }
   return out;
 }
 
-async function _syncToFirestore(items) {
-  if (!_db) return;
-  try {
-    const col = _db.collection('inventory');
-    const newIds = new Set(items.map(i => String(i.id)));
-    _fsIds.forEach(id => { if (!newIds.has(id)) col.doc(id).delete().catch(()=>{}); });
-    await Promise.all(items.map(item =>
-      col.doc(String(item.id)).set(_cleanItem(item))
-    ));
-    _fsIds = newIds;
-    _setSyncDot('#10B981', '同期済み: ' + new Date().toLocaleTimeString('ja-JP'));
-  } catch(e) {
-    console.error('Firestore書き込みエラー:', e);
-    _setSyncDot('#EF4444', 'エラー: ' + e.message);
-    toast('⚠️ 同期エラー: ' + e.message);
+function _merge(localItems, fsItems) {
+  // 同じIDのアイテムは_updatedAtが新しい方を採用。片方にしかないアイテムは保持。
+  const merged = new Map(localItems.map(i => [String(i.id), i]));
+  for (const fsItem of fsItems) {
+    const id = String(fsItem.id);
+    const loc = merged.get(id);
+    if (!loc || (fsItem._updatedAt || 0) >= (loc._updatedAt || 0)) {
+      merged.set(id, fsItem);
+    }
   }
+  return [...merged.values()];
 }
 
-let _initialSyncDone = false;
+function _push(items) {
+  // localStorage保存後にFirestoreへ非同期送信（失敗しても表示には影響しない）
+  if (!_db) return;
+  const col = _db.collection('inventory');
+  const newIds = new Set(items.map(i => String(i.id)));
+  _fsIds.forEach(id => { if (!newIds.has(id)) col.doc(id).delete().catch(() => {}); });
+  items.forEach(item => {
+    col.doc(String(item.id)).set(_clean(item)).catch(e => {
+      console.error('Firestore write error:', e);
+      _dot('#EF4444', '書込エラー: ' + e.message);
+    });
+  });
+  _fsIds = newIds;
+  _dot('#10B981', '同期済み ' + new Date().toLocaleTimeString('ja-JP'));
+}
 
 function initFirebase() {
   try {
@@ -629,56 +638,34 @@ function initFirebase() {
     };
     if (!firebase.apps.length) firebase.initializeApp(cfg);
     _db = firebase.firestore();
-    _setSyncDot('#9CA3AF', 'Firebase接続中...');
+    _dot('#9CA3AF', '接続中...');
 
     _db.collection('inventory').onSnapshot(snapshot => {
+      // Firestoreからリアルタイム更新を受信
       const fsItems = snapshot.docs.map(d => d.data());
       _fsIds = new Set(snapshot.docs.map(d => d.id));
-      const local = localStorage.getItem(DB_KEY);
-      const localItems = local ? JSON.parse(local) : [];
+      const localItems = getItems();
 
-      // タイムスタンプベースのマージ: 新しい方のデータを優先
-      const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
-      const localIds = new Set(localItems.map(i => String(i.id)));
-
-      const mergedMap = new Map();
-      localItems.forEach(i => mergedMap.set(String(i.id), i));
-      fsItems.forEach(fsItem => {
-        const id = String(fsItem.id);
-        const localItem = mergedMap.get(id);
-        if (!localItem) {
-          mergedMap.set(id, fsItem); // Firestoreにしかないアイテム（他デバイスで追加）
-        } else {
-          const fsTs = fsItem._updatedAt || 0;
-          const localTs = localItem._updatedAt || 0;
-          if (fsTs >= localTs) mergedMap.set(id, fsItem); // Firestoreが新しい（または同じ）
-          // localTsが大きければローカルを保持（このデバイスで最後に更新）
-        }
-      });
-      const mergedArr = [...mergedMap.values()];
-      const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
-
-      if (!_initialSyncDone) {
-        if (snapshot.metadata.hasPendingWrites) return;
-        _initialSyncDone = true;
-        localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
-        if (localOnly.length > 0) _syncToFirestore(mergedArr);
-        _setSyncDot('#10B981', '初期同期完了: ' + new Date().toLocaleTimeString('ja-JP'));
-        renderPage(currentPage);
-        return;
-      }
-      // 他デバイスの変更を反映
+      // マージしてlocalStorageを更新
+      const mergedArr = _merge(localItems, fsItems);
       localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
-      if (localOnly.length > 0) _syncToFirestore(mergedArr);
-      _setSyncDot('#10B981', '最終同期: ' + new Date().toLocaleTimeString('ja-JP'));
-      renderPage(currentPage);
+      _dot('#10B981', '最終同期: ' + new Date().toLocaleTimeString('ja-JP'));
+
+      // ローカルにしかないアイテムをFirestoreに送信
+      const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
+      const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
+      if (localOnly.length > 0) _push(mergedArr);
+
+      // 手動同期中でなければ画面を更新
+      if (!_syncBusy) renderPage(currentPage);
+
     }, e => {
-      console.error('Firestore onSnapshotエラー:', e);
-      _setSyncDot('#EF4444', 'エラー: ' + e.message);
+      console.error('Firestore error:', e);
+      _dot('#EF4444', 'エラー: ' + e.message);
     });
   } catch(e) {
-    console.error('Firebase初期化エラー:', e);
-    _setSyncDot('#EF4444', 'Firebase初期化エラー');
+    console.error('Firebase init error:', e);
+    _dot('#EF4444', '初期化エラー');
   }
 }
 
@@ -720,11 +707,14 @@ function calcItem(item) {
 }
 
 // ==================== TOAST ====================
-function toast(msg) {
+let _toastTimer = null;
+function toast(msg, duration) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
+  clearTimeout(_toastTimer);
+  const d = (duration === undefined) ? 2500 : duration;
+  if (d > 0) _toastTimer = setTimeout(() => t.classList.remove('show'), d);
 }
 
 // ==================== NAVIGATION ====================
@@ -1939,12 +1929,10 @@ function renderSettings(el) {
     </div>
     <div class="card" style="margin-top:16px">
       <div class="card-title" style="color:var(--primary)">🔄 クラウド同期</div>
-      <p style="font-size:13px;color:var(--gray-500);margin-bottom:8px">📤 <strong>スマホ用：</strong>このデバイスのデータをクラウドに送信</p>
-      <button class="btn btn-primary" onclick="forceSyncNow()" id="sync-btn">☁️ このデバイスから送信する</button>
-      <span id="sync-status" style="margin-left:12px;font-size:13px;color:var(--gray-500)"></span>
-      <p style="font-size:13px;color:var(--gray-500);margin-top:12px;margin-bottom:8px">📥 <strong>PC用：</strong>クラウドの最新データをこのデバイスに取り込む</p>
-      <button class="btn btn-outline" onclick="pullFromFirestore()" id="pull-btn">⬇️ クラウドから取得する</button>
-      <span id="pull-status" style="margin-left:12px;font-size:13px;color:var(--gray-500)"></span>
+      <p style="font-size:13px;color:var(--gray-500);margin-bottom:8px">📤 <strong>送信：</strong>このデバイスのデータをクラウドに強制送信</p>
+      <button class="btn btn-primary" onclick="forceSyncNow()">☁️ このデバイスから送信する</button>
+      <p style="font-size:13px;color:var(--gray-500);margin-top:12px;margin-bottom:8px">📥 <strong>受信：</strong>クラウドの最新データをこのデバイスに取り込む</p>
+      <button class="btn btn-outline" onclick="pullFromFirestore()">⬇️ クラウドから取得する</button>
     </div>
     <div class="card" style="margin-top:16px">
       <div class="card-title" style="color:var(--danger)">データ管理</div>
@@ -2266,73 +2254,47 @@ function executeImport() {
 }
 
 async function forceSyncNow() {
-  const btn = document.getElementById('sync-btn');
-  const status = document.getElementById('sync-status');
-  if (!_db) {
-    status.textContent = '❌ Firebase未接続。ページを再読み込みしてください。';
-    status.style.color = 'var(--danger)';
-    return;
-  }
-  btn.disabled = true;
-  status.textContent = '接続中...';
-  status.style.color = 'var(--gray-500)';
+  // このデバイスの全データをFirestoreに強制送信（進捗はtoastで表示）
+  if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 4000); return; }
+  _syncBusy = true;
   try {
     await _db.enableNetwork();
-    // このデバイスのデータを必ず最新として扱う（_updatedAt を今の時刻で強制上書き）
     const now = Date.now();
-    const allItems = getItems().map(i => ({...i, _updatedAt: now}));
+    const allItems = getItems().map(i => ({..._clean(i), _updatedAt: now}));
     const col = _db.collection('inventory');
     const CHUNK = 20;
-    let done = 0;
     for (let i = 0; i < allItems.length; i += CHUNK) {
-      await Promise.all(
-        allItems.slice(i, i+CHUNK).map(item =>
-          col.doc(String(item.id)).set(_cleanItem(item))
-        )
-      );
-      done = Math.min(i + CHUNK, allItems.length);
-      status.textContent = `送信中... ${done}/${allItems.length}件`;
+      await Promise.all(allItems.slice(i, i+CHUNK).map(item => col.doc(String(item.id)).set(item)));
+      toast(`☁️ 送信中... ${Math.min(i+CHUNK, allItems.length)}/${allItems.length}件`, 0);
     }
-    btn.disabled = false;
-    status.textContent = `✅ 同期完了（${allItems.length}件）`;
-    status.style.color = 'green';
+    toast(`✅ 送信完了（${allItems.length}件）`, 4000);
   } catch(e) {
-    btn.disabled = false;
-    status.textContent = '❌ エラー: ' + e.message;
-    status.style.color = 'var(--danger)';
+    toast('❌ 送信エラー: ' + e.message, 5000);
+    console.error('forceSyncNow error:', e);
+  } finally {
+    _syncBusy = false;
   }
 }
 
 async function pullFromFirestore() {
-  const btn = document.getElementById('pull-btn');
-  const status = document.getElementById('pull-status');
-  if (!_db) {
-    status.textContent = '❌ Firebase未接続。ページを再読み込みしてください。';
-    status.style.color = 'var(--danger)';
-    return;
-  }
-  btn.disabled = true;
-  status.textContent = '取得中...';
-  status.style.color = 'var(--gray-500)';
+  // Firestoreから最新データを強制取得（進捗はtoastで表示）
+  if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 4000); return; }
+  _syncBusy = true;
+  toast('⬇️ Firestoreから取得中...', 0);
   try {
     await _db.enableNetwork();
     const snapshot = await _db.collection('inventory').get({source: 'server'});
     const fsItems = snapshot.docs.map(d => d.data());
     _fsIds = new Set(snapshot.docs.map(d => d.id));
-    const localItems = getItems();
-    const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
-    // Firestoreにないローカル独自アイテムは保持
-    const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
-    const mergedArr = [...fsItems, ...localOnly];
+    const mergedArr = _merge(getItems(), fsItems);
     localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
+    toast(`✅ 取得完了（${fsItems.length}件）`, 4000);
     renderPage(currentPage);
-    btn.disabled = false;
-    status.textContent = `✅ 取得完了（${fsItems.length}件）`;
-    status.style.color = 'green';
   } catch(e) {
-    btn.disabled = false;
-    status.textContent = '❌ エラー: ' + e.message;
-    status.style.color = 'var(--danger)';
+    toast('❌ 取得エラー: ' + e.message, 5000);
+    console.error('pullFromFirestore error:', e);
+  } finally {
+    _syncBusy = false;
   }
 }
 
