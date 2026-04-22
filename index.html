@@ -649,19 +649,6 @@ function initFirebase() {
       _fsIds = new Set(snapshot.docs.map(d => d.id));
       const localItems = getItems();
 
-      // ★ 初回接続時: ローカルデータを最新タイムスタンプでFirestoreに送信
-      //    → 過去の壊れたFirestoreデータをローカルの正しいデータで上書き
-      if (!_initPushDone) {
-        _initPushDone = true;
-        const now = Date.now();
-        const freshItems = localItems.map(i => ({...i, _updatedAt: now}));
-        localStorage.setItem(DB_KEY, JSON.stringify(freshItems));
-        _push(freshItems);
-        _dot('#10B981', '初期化完了: ' + new Date().toLocaleTimeString('ja-JP'));
-        if (!_syncBusy && currentPage !== 'add' && currentPage !== 'settings') renderPage(currentPage);
-        return;
-      }
-
       // マージしてlocalStorageを更新（ローカルが同点以上なら常にローカル優先）
       const mergedArr = _merge(localItems, fsItems);
       localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
@@ -1200,7 +1187,12 @@ function submitAdd() {
   _lastSource = source; // 仕入れ先を次回登録に引き継ぎ
   saveItems(items);
   toast('✅ 商品を登録しました');
-  clearAddForm();
+  // 登録後は在庫一覧にフィルターなしで遷移して確認できるようにする
+  invFilters.status = '';
+  invFilters.genre = '';
+  invFilters.platform = '';
+  invFilters.q = '';
+  navigateTo('inventory');
 }
 
 // ==================== SELL LIST ====================
