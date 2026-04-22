@@ -1942,6 +1942,7 @@ function renderSettings(el) {
       <button class="btn btn-primary" onclick="forceSyncNow()">☁️ このデバイスから送信する</button>
       <p style="font-size:13px;color:var(--gray-500);margin-top:12px;margin-bottom:8px">📥 <strong>受信：</strong>クラウドの最新データをこのデバイスに取り込む</p>
       <button class="btn btn-outline" onclick="pullFromFirestore()">⬇️ クラウドから取得する</button>
+      <button class="btn btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="forceReplaceFromFirestore()">🔄 クラウドで完全上書き</button>
     </div>
     <div class="card" style="margin-top:16px">
       <div class="card-title" style="color:var(--danger)">データ管理</div>
@@ -2303,7 +2304,6 @@ async function forceSyncNow() {
 }
 
 async function pullFromFirestore() {
-  // Firestoreから最新データを強制取得（進捗はtoastで表示）
   if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 4000); return; }
   _syncBusy = true;
   toast('⬇️ Firestoreから取得中...', 0);
@@ -2319,6 +2319,27 @@ async function pullFromFirestore() {
   } catch(e) {
     toast('❌ 取得エラー: ' + e.message, 5000);
     console.error('pullFromFirestore error:', e);
+  } finally {
+    _syncBusy = false;
+  }
+}
+
+async function forceReplaceFromFirestore() {
+  // マージなし・完全上書き取得（ローカルデータをクラウドで完全に置き換える）
+  if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 4000); return; }
+  _syncBusy = true;
+  toast('🔄 クラウドから完全取得中...', 0);
+  try {
+    await _db.enableNetwork();
+    const snapshot = await _db.collection('inventory').get({source: 'server'});
+    const fsItems = snapshot.docs.map(d => d.data());
+    _fsIds = new Set(snapshot.docs.map(d => d.id));
+    localStorage.setItem(DB_KEY, JSON.stringify(fsItems));
+    toast(`✅ 完全取得完了（${fsItems.length}件）`, 4000);
+    navigateTo('inventory');
+  } catch(e) {
+    toast('❌ 取得エラー: ' + e.message, 5000);
+    console.error('forceReplaceFromFirestore error:', e);
   } finally {
     _syncBusy = false;
   }
