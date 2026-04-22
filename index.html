@@ -2267,17 +2267,32 @@ async function forceSyncNow() {
   if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 8000); return; }
   _syncBusy = true;
   try {
-    toast('☁️ Firebaseに接続中...', 0);
     await _db.enableNetwork();
     const now = Date.now();
     const allItems = getItems().map(i => ({..._clean(i), _updatedAt: now}));
-    toast(`☁️ 送信開始（${allItems.length}件）...`, 0);
     const col = _db.collection('inventory');
+    const newIds = new Set(allItems.map(i => String(i.id)));
+
+    // Firestoreにある不要なドキュメント（古い壊れたデータ）を削除
+    toast('☁️ 古いデータ確認中...', 0);
+    const existing = await col.get({source: 'server'});
+    const toDelete = existing.docs.filter(d => !newIds.has(d.id));
+    if (toDelete.length > 0) {
+      toast(`☁️ 古いデータ${toDelete.length}件削除中...`, 0);
+      const CHUNK = 20;
+      for (let i = 0; i < toDelete.length; i += CHUNK) {
+        await Promise.all(toDelete.slice(i, i+CHUNK).map(d => d.ref.delete()));
+      }
+    }
+
+    // ローカルデータを送信
+    toast(`☁️ 送信開始（${allItems.length}件）...`, 0);
     const CHUNK = 20;
     for (let i = 0; i < allItems.length; i += CHUNK) {
       await Promise.all(allItems.slice(i, i+CHUNK).map(item => col.doc(String(item.id)).set(item)));
       toast(`☁️ 送信中... ${Math.min(i+CHUNK, allItems.length)}/${allItems.length}件`, 0);
     }
+    _fsIds = newIds;
     toast(`✅ 送信完了（${allItems.length}件）`, 8000);
   } catch(e) {
     toast('❌ 送信エラー: ' + e.message, 8000);
