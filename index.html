@@ -230,9 +230,10 @@
 
   /* Toast */
   #toast {
-    position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-10px);
+    position: fixed; top: max(env(safe-area-inset-top, 0px) + 16px, 60px); left: 50%; transform: translateX(-50%) translateY(-10px);
     background: var(--gray-900); color: white; padding: 12px 24px; border-radius: 8px;
     font-size: 14px; opacity: 0; transition: all 0.3s; z-index: 9999; white-space: nowrap;
+    max-width: 90vw; text-overflow: ellipsis; overflow: hidden;
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
@@ -579,6 +580,8 @@ function saveItems(items) {
 let _db = null;
 let _fsIds = new Set();
 let _syncBusy = false; // 手動同期中フラグ（onSnapshotの再描画を抑制）
+let _initPushDone = false; // 起動時のローカル→Firestore初期送信済みフラグ
+let _lastSource = ''; // 登録フォームの仕入れ先を次回に引き継ぐ
 
 function _dot(color, msg) {
   const el = document.getElementById('sync-dot');
@@ -598,12 +601,12 @@ function _clean(item) {
 }
 
 function _merge(localItems, fsItems) {
-  // 同じIDのアイテムは_updatedAtが新しい方を採用。片方にしかないアイテムは保持。
+  // 同じIDのアイテムはFirestoreが「厳密に新しい」場合のみ採用。同点はローカル優先。
   const merged = new Map(localItems.map(i => [String(i.id), i]));
   for (const fsItem of fsItems) {
     const id = String(fsItem.id);
     const loc = merged.get(id);
-    if (!loc || (fsItem._updatedAt || 0) >= (loc._updatedAt || 0)) {
+    if (!loc || (fsItem._updatedAt || 0) > (loc._updatedAt || 0)) {
       merged.set(id, fsItem);
     }
   }
@@ -646,7 +649,20 @@ function initFirebase() {
       _fsIds = new Set(snapshot.docs.map(d => d.id));
       const localItems = getItems();
 
-      // マージしてlocalStorageを更新
+      // ★ 初回接続時: ローカルデータを最新タイムスタンプでFirestoreに送信
+      //    → 過去の壊れたFirestoreデータをローカルの正しいデータで上書き
+      if (!_initPushDone) {
+        _initPushDone = true;
+        const now = Date.now();
+        const freshItems = localItems.map(i => ({...i, _updatedAt: now}));
+        localStorage.setItem(DB_KEY, JSON.stringify(freshItems));
+        _push(freshItems);
+        _dot('#10B981', '初期化完了: ' + new Date().toLocaleTimeString('ja-JP'));
+        if (!_syncBusy && currentPage !== 'add' && currentPage !== 'settings') renderPage(currentPage);
+        return;
+      }
+
+      // マージしてlocalStorageを更新（ローカルが同点以上なら常にローカル優先）
       const mergedArr = _merge(localItems, fsItems);
       localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
       _dot('#10B981', '最終同期: ' + new Date().toLocaleTimeString('ja-JP'));
@@ -656,8 +672,8 @@ function initFirebase() {
       const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
       if (localOnly.length > 0) _push(mergedArr);
 
-      // 手動同期中でなければ画面を更新
-      if (!_syncBusy) renderPage(currentPage);
+      // 手動同期中でなければ画面を更新（add/settingsは再描画しない＝入力内容を守る）
+      if (!_syncBusy && currentPage !== 'add' && currentPage !== 'settings') renderPage(currentPage);
 
     }, e => {
       console.error('Firestore error:', e);
@@ -1096,7 +1112,7 @@ function renderAdd(el) {
         </div>
         <div class="form-group">
           <label>仕入れ先 <span style="color:var(--danger)">*</span></label>
-          <input type="text" id="a-source" placeholder="例：セカンドストリート 大宮店" list="source-list" autocomplete="off">
+          <input type="text" id="a-source" placeholder="例：セカンドストリート 大宮店" list="source-list" autocomplete="off" value="${_lastSource}">
           <datalist id="source-list">
             ${settings.purchaseSources.map(s=>`<option value="${s}">`).join('')}
           </datalist>
@@ -1181,6 +1197,7 @@ function submitAdd() {
     shippingMethod: null, shippingCost: 0, commission: 0, boxCost: 0
   };
   items.push(newItem);
+  _lastSource = source; // 仕入れ先を次回登録に引き継ぎ
   saveItems(items);
   toast('✅ 商品を登録しました');
   clearAddForm();
@@ -2254,22 +2271,24 @@ function executeImport() {
 }
 
 async function forceSyncNow() {
-  // このデバイスの全データをFirestoreに強制送信（進捗はtoastで表示）
-  if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 4000); return; }
+  toast('☁️ 送信準備中...', 0);
+  if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 8000); return; }
   _syncBusy = true;
   try {
+    toast('☁️ Firebaseに接続中...', 0);
     await _db.enableNetwork();
     const now = Date.now();
     const allItems = getItems().map(i => ({..._clean(i), _updatedAt: now}));
+    toast(`☁️ 送信開始（${allItems.length}件）...`, 0);
     const col = _db.collection('inventory');
     const CHUNK = 20;
     for (let i = 0; i < allItems.length; i += CHUNK) {
       await Promise.all(allItems.slice(i, i+CHUNK).map(item => col.doc(String(item.id)).set(item)));
       toast(`☁️ 送信中... ${Math.min(i+CHUNK, allItems.length)}/${allItems.length}件`, 0);
     }
-    toast(`✅ 送信完了（${allItems.length}件）`, 4000);
+    toast(`✅ 送信完了（${allItems.length}件）`, 8000);
   } catch(e) {
-    toast('❌ 送信エラー: ' + e.message, 5000);
+    toast('❌ 送信エラー: ' + e.message, 8000);
     console.error('forceSyncNow error:', e);
   } finally {
     _syncBusy = false;
