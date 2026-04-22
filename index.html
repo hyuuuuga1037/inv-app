@@ -1186,13 +1186,8 @@ function submitAdd() {
   items.push(newItem);
   _lastSource = source; // 仕入れ先を次回登録に引き継ぎ
   saveItems(items);
-  toast('✅ 商品を登録しました');
-  // 登録後は在庫一覧にフィルターなしで遷移して確認できるようにする
-  invFilters.status = '';
-  invFilters.genre = '';
-  invFilters.platform = '';
-  invFilters.q = '';
-  navigateTo('inventory');
+  toast('✅ 商品を登録しました（No.' + newItem.no + '）');
+  clearAddForm();
 }
 
 // ==================== SELL LIST ====================
