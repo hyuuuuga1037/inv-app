@@ -573,15 +573,17 @@ function saveItems(items) {
     return {...item, _updatedAt: changed ? now : (item._updatedAt || now)};
   });
   localStorage.setItem(DB_KEY, JSON.stringify(stamped));
-  _push(stamped); // Firestoreに非同期送信
+  _lastLocalWrite = Date.now();
+  _push(stamped);
 }
 
 // ── Firebase Sync ──
 let _db = null;
 let _fsIds = new Set();
-let _syncBusy = false; // 手動同期中フラグ（onSnapshotの再描画を抑制）
-let _initPushDone = false; // 起動時のローカル→Firestore初期送信済みフラグ
-let _lastSource = ''; // 登録フォームの仕入れ先を次回に引き継ぐ
+let _syncBusy = false;
+let _initPushDone = false;
+let _lastSource = '';
+let _lastLocalWrite = 0; // 最後にローカル保存した時刻（Firestoreの上書き防止用）
 
 function _dot(color, msg) {
   const el = document.getElementById('sync-dot');
@@ -648,6 +650,13 @@ function initFirebase() {
       const fsItems = snapshot.docs.map(d => d.data());
       _fsIds = new Set(snapshot.docs.map(d => d.id));
       const localItems = getItems();
+
+      // 直近5秒以内にローカル保存があればFirestoreからの上書きをスキップ
+      if (Date.now() - _lastLocalWrite < 5000) {
+        _dot('#10B981', '最終同期: ' + new Date().toLocaleTimeString('ja-JP'));
+        if (!_syncBusy && currentPage !== 'add' && currentPage !== 'settings') renderPage(currentPage);
+        return;
+      }
 
       // マージしてlocalStorageを更新（ローカルが同点以上なら常にローカル優先）
       const mergedArr = _merge(localItems, fsItems);
@@ -1184,9 +1193,14 @@ function submitAdd() {
     shippingMethod: null, shippingCost: 0, commission: 0, boxCost: 0
   };
   items.push(newItem);
-  _lastSource = source; // 仕入れ先を次回登録に引き継ぎ
+  _lastSource = source;
   saveItems(items);
-  toast('✅ 商品を登録しました（No.' + newItem.no + '）');
+  // 在庫一覧のフィルターをリセット（次回在庫一覧を開いたとき全件表示される）
+  invFilters.status = '';
+  invFilters.genre = '';
+  invFilters.platform = '';
+  invFilters.q = '';
+  toast('✅ No.' + newItem.no + ' 登録完了', 3000);
   clearAddForm();
 }
 
