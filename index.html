@@ -981,6 +981,11 @@ function renderInventoryTable() {
   }
   items = items.slice().sort((a,b)=>b.no-a.no);
 
+  // 診断表示（件数・最大No）
+  const _all = getItems();
+  const _pt = document.getElementById('page-title');
+  if (_pt) _pt.textContent = `在庫一覧 (計${_all.length}件 / 最大No.${Math.max(0,..._all.map(i=>i.no||0))})`;
+
   const area = document.getElementById('inv-table-area');
   if (!area) return;
   if (!items.length) {
