@@ -954,6 +954,7 @@ let invFilters = { status: '', genre: '', platform: '', q: '' };
 
 function renderInventory(el) {
   const settings = getSettings();
+  try {
   el.innerHTML = `
     <div class="filters">
       <input type="text" placeholder="🔍 ブランド・商品名で検索" id="inv-q" value="${invFilters.q}" oninput="invFilters.q=this.value;renderInventoryTable()" style="min-width:180px">
@@ -978,6 +979,9 @@ function renderInventory(el) {
     </div>
   `;
   renderInventoryTable();
+  } catch(e) {
+    el.innerHTML = `<div style="padding:24px;color:var(--danger)">表示エラー: ${e.message}</div>`;
+  }
 }
 
 function renderInventoryTable() {
@@ -1186,7 +1190,8 @@ function submitAdd() {
   invFilters.genre = '';
   invFilters.platform = '';
   invFilters.q = '';
-  toast('✅ No.' + newItem.no + ' 登録完了', 3000);
+  const savedCount = getItems().length;
+  toast('✅ No.' + newItem.no + ' 登録完了 (計' + savedCount + '件)', 3000);
   clearAddForm();
 }
 
