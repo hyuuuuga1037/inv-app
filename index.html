@@ -574,7 +574,6 @@ function saveItems(items) {
   });
   localStorage.setItem(DB_KEY, JSON.stringify(stamped));
   _lastLocalWrite = Date.now();
-  _push(stamped);
 }
 
 // ── Firebase Sync ──
@@ -645,22 +644,8 @@ function initFirebase() {
     _db = firebase.firestore();
     _dot('#9CA3AF', '接続中...');
 
-    _db.collection('inventory').onSnapshot(snapshot => {
-      // FirestoreのIDリストだけ更新（localStorage上書きはしない）
-      const fsItems = snapshot.docs.map(d => d.data());
-      _fsIds = new Set(snapshot.docs.map(d => d.id));
-      _dot('#10B981', '最終同期: ' + new Date().toLocaleTimeString('ja-JP'));
-
-      // ローカルにしかないアイテムをFirestoreに送信（バックアップ）
-      const localItems = getItems();
-      const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
-      const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
-      if (localOnly.length > 0) _push(localItems);
-
-    }, e => {
-      console.error('Firestore error:', e);
-      _dot('#EF4444', 'エラー: ' + e.message);
-    });
+    // 自動同期は無効（手動同期ボタンのみ使用可）
+    _dot('#10B981', 'PC専用モード');
   } catch(e) {
     console.error('Firebase init error:', e);
     _dot('#EF4444', '初期化エラー');
