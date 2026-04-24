@@ -646,30 +646,16 @@ function initFirebase() {
     _dot('#9CA3AF', '接続中...');
 
     _db.collection('inventory').onSnapshot(snapshot => {
-      // Firestoreからリアルタイム更新を受信
+      // FirestoreのIDリストだけ更新（localStorage上書きはしない）
       const fsItems = snapshot.docs.map(d => d.data());
       _fsIds = new Set(snapshot.docs.map(d => d.id));
-      const localItems = getItems();
-
-      // 直近5秒以内にローカル保存があればFirestoreからの上書きをスキップ
-      if (Date.now() - _lastLocalWrite < 5000) {
-        _dot('#10B981', '最終同期: ' + new Date().toLocaleTimeString('ja-JP'));
-        if (!_syncBusy && currentPage !== 'add' && currentPage !== 'settings') renderPage(currentPage);
-        return;
-      }
-
-      // マージしてlocalStorageを更新（ローカルが同点以上なら常にローカル優先）
-      const mergedArr = _merge(localItems, fsItems);
-      localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
       _dot('#10B981', '最終同期: ' + new Date().toLocaleTimeString('ja-JP'));
 
-      // ローカルにしかないアイテムをFirestoreに送信
+      // ローカルにしかないアイテムをFirestoreに送信（バックアップ）
+      const localItems = getItems();
       const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
       const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
-      if (localOnly.length > 0) _push(mergedArr);
-
-      // 手動同期中でなければ画面を更新（add/settingsは再描画しない＝入力内容を守る）
-      if (!_syncBusy && currentPage !== 'add' && currentPage !== 'settings') renderPage(currentPage);
+      if (localOnly.length > 0) _push(localItems);
 
     }, e => {
       console.error('Firestore error:', e);
