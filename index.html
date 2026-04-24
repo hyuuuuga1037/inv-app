@@ -1190,8 +1190,7 @@ function submitAdd() {
   invFilters.genre = '';
   invFilters.platform = '';
   invFilters.q = '';
-  const savedCount = getItems().length;
-  toast('✅ No.' + newItem.no + ' 登録完了 (計' + savedCount + '件)', 3000);
+  toast('✅ No.' + newItem.no + ' 登録完了', 3000);
   clearAddForm();
 }
 
