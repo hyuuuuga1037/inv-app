@@ -1185,7 +1185,11 @@ function submitAdd() {
 
 // ==================== SELL LIST ====================
 function renderSellList(el) {
-  const items = getItems().filter(i => i.status !== 'sold').sort((a,b)=>b.no-a.no);
+  const items = getItems().filter(i => i.status !== 'sold').sort((a,b)=>{
+    const na = (a.no != null && a.no !== '' && !isNaN(a.no)) ? Number(a.no) : -1;
+    const nb = (b.no != null && b.no !== '' && !isNaN(b.no)) ? Number(b.no) : -1;
+    return nb - na;
+  });
   el.innerHTML = `
     <div class="card">
       <div class="card-title">売却する商品を選んでください</div>
