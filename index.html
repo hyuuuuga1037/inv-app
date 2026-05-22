@@ -230,10 +230,9 @@
 
   /* Toast */
   #toast {
-    position: fixed; top: max(env(safe-area-inset-top, 0px) + 16px, 60px); left: 50%; transform: translateX(-50%) translateY(-10px);
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-10px);
     background: var(--gray-900); color: white; padding: 12px 24px; border-radius: 8px;
     font-size: 14px; opacity: 0; transition: all 0.3s; z-index: 9999; white-space: nowrap;
-    max-width: 90vw; text-overflow: ellipsis; overflow: hidden;
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
@@ -573,16 +572,13 @@ function saveItems(items) {
     return {...item, _updatedAt: changed ? now : (item._updatedAt || now)};
   });
   localStorage.setItem(DB_KEY, JSON.stringify(stamped));
-  _lastLocalWrite = Date.now();
+  _push(stamped); // Firestoreに非同期送信
 }
 
 // ── Firebase Sync ──
 let _db = null;
 let _fsIds = new Set();
-let _syncBusy = false;
-let _initPushDone = false;
-let _lastSource = '';
-let _lastLocalWrite = 0; // 最後にローカル保存した時刻（Firestoreの上書き防止用）
+let _syncBusy = false; // 手動同期中フラグ（onSnapshotの再描画を抑制）
 
 function _dot(color, msg) {
   const el = document.getElementById('sync-dot');
@@ -602,12 +598,12 @@ function _clean(item) {
 }
 
 function _merge(localItems, fsItems) {
-  // 同じIDのアイテムはFirestoreが「厳密に新しい」場合のみ採用。同点はローカル優先。
+  // 同じIDのアイテムは_updatedAtが新しい方を採用。片方にしかないアイテムは保持。
   const merged = new Map(localItems.map(i => [String(i.id), i]));
   for (const fsItem of fsItems) {
     const id = String(fsItem.id);
     const loc = merged.get(id);
-    if (!loc || (fsItem._updatedAt || 0) > (loc._updatedAt || 0)) {
+    if (!loc || (fsItem._updatedAt || 0) >= (loc._updatedAt || 0)) {
       merged.set(id, fsItem);
     }
   }
@@ -644,8 +640,29 @@ function initFirebase() {
     _db = firebase.firestore();
     _dot('#9CA3AF', '接続中...');
 
-    // 自動同期は無効（手動同期ボタンのみ使用可）
-    _dot('#10B981', 'PC専用モード');
+    _db.collection('inventory').onSnapshot(snapshot => {
+      // Firestoreからリアルタイム更新を受信
+      const fsItems = snapshot.docs.map(d => d.data());
+      _fsIds = new Set(snapshot.docs.map(d => d.id));
+      const localItems = getItems();
+
+      // マージしてlocalStorageを更新
+      const mergedArr = _merge(localItems, fsItems);
+      localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
+      _dot('#10B981', '最終同期: ' + new Date().toLocaleTimeString('ja-JP'));
+
+      // ローカルにしかないアイテムをFirestoreに送信
+      const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
+      const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
+      if (localOnly.length > 0) _push(mergedArr);
+
+      // 手動同期中でなければ画面を更新
+      if (!_syncBusy) renderPage(currentPage);
+
+    }, e => {
+      console.error('Firestore error:', e);
+      _dot('#EF4444', 'エラー: ' + e.message);
+    });
   } catch(e) {
     console.error('Firebase init error:', e);
     _dot('#EF4444', '初期化エラー');
@@ -739,10 +756,10 @@ function renderPage(page) {
 // ==================== DASHBOARD ====================
 let _dashYears = [];
 let _dashActiveYear = '';
+let _summaryYear = null;
 
 function renderDashboard(el) {
   const items = getItems();
-  // purchaseDate・saleDate両方から年を収集（YYYY-MM-DD形式のみ）
   const yearSet = new Set();
   items.forEach(i => {
     if (i.purchaseDate && /^\d{4}-/.test(i.purchaseDate)) yearSet.add(i.purchaseDate.slice(0,4));
@@ -752,34 +769,34 @@ function renderDashboard(el) {
   yearSet.add(currentYear);
   _dashYears = [...yearSet].sort((a,b) => b-a);
 
-  // 売上データのある最新年をデフォルトに
   const soldYears = [...new Set(items.filter(i=>i.saleDate).map(i=>i.saleDate.slice(0,4)))].sort((a,b)=>b-a);
   _dashActiveYear = soldYears[0] || currentYear;
+  if (_summaryYear === null) _summaryYear = currentYear;
 
-  const allSold = items.filter(i => i.status === 'sold');
-  const totalProfit = allSold.reduce((s, i) => s + (calcItem(i).profit || 0), 0);
-  const totalSale = allSold.reduce((s, i) => s + (i.salePrice || 0), 0);
-  const totalPurchase = items.reduce((s, i) => s + (i.purchasePrice || 0), 0);
-  const inStock = items.filter(i => i.status !== 'sold').length;
+  const inStockItems = items.filter(i => i.status !== 'sold');
+  const inStockCount = inStockItems.length;
+  const inStockValue = inStockItems.reduce((s,i) => s + (i.purchasePrice || 0), 0);
 
   el.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-label">累計売上</div>
-        <div class="stat-value blue">¥${fmt(totalSale)}</div>
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin-bottom:0">累計サマリー</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="year-tab${_summaryYear===''?' active':''}" onclick="switchSummaryYear('')">全期間</button>
+          ${_dashYears.map(y => `<button class="year-tab${_summaryYear===y?' active':''}" onclick="switchSummaryYear('${y}')">${y}年</button>`).join('')}
+        </div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">累計利益</div>
-        <div class="stat-value green">¥${fmt(totalProfit)}</div>
-        <div class="stat-sub">${totalSale ? (totalProfit/totalSale*100).toFixed(1)+'%' : '-'}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">累計仕入れ</div>
-        <div class="stat-value">¥${fmt(totalPurchase)}</div>
-      </div>
+      <div id="summary-stats-area"></div>
+    </div>
+    <div class="stats-grid" style="margin-bottom:16px">
       <div class="stat-card">
         <div class="stat-label">在庫数</div>
-        <div class="stat-value">${inStock}<span style="font-size:14px;color:var(--gray-400)"> 点</span></div>
+        <div class="stat-value">${inStockCount}<span style="font-size:14px;color:var(--gray-400)"> 点</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">在庫合計金額</div>
+        <div class="stat-value">¥${fmt(inStockValue)}</div>
+        <div class="stat-sub">仕入れ価格の合計</div>
       </div>
     </div>
     <div class="card">
@@ -797,10 +814,110 @@ function renderDashboard(el) {
       <div class="card-title">販売先別 売上</div>
       <div id="platform-stats"></div>
     </div>
+    <div class="card" style="margin-top:0">
+      <div class="card-title">ジャンル別 売上</div>
+      <div id="genre-stats"></div>
+    </div>
   `;
 
+  renderSummaryStats(_summaryYear, items);
   renderMonthlyTable(_dashActiveYear, items);
   renderPlatformStats(items);
+  renderGenreStats(items);
+}
+
+function switchSummaryYear(year) {
+  _summaryYear = year;
+  renderDashboard(document.getElementById('content'));
+}
+
+function renderSummaryStats(year, items) {
+  const soldFiltered = year
+    ? items.filter(i => i.status === 'sold' && i.saleDate && i.saleDate.startsWith(year))
+    : items.filter(i => i.status === 'sold');
+  const totalSale   = soldFiltered.reduce((s,i) => s + (i.salePrice || 0), 0);
+  const totalProfit = soldFiltered.reduce((s,i) => s + (calcItem(i).profit || 0), 0);
+  const purchaseFiltered = year
+    ? items.filter(i => i.purchaseDate && i.purchaseDate.startsWith(year))
+    : items;
+  const totalPurchase = purchaseFiltered.reduce((s,i) => s + (i.purchasePrice || 0), 0);
+  const profitRate = totalSale ? (totalProfit / totalSale * 100) : null;
+  const label = year ? year + '年' : '全期間';
+  const area = document.getElementById('summary-stats-area');
+  if (!area) return;
+  area.innerHTML = `
+    <div class="stats-grid" style="margin-bottom:0">
+      <div class="stat-card">
+        <div class="stat-label">${label} 売上</div>
+        <div class="stat-value blue">¥${fmt(totalSale)}</div>
+        <div class="stat-sub">${soldFiltered.length}件</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">${label} 利益</div>
+        <div class="stat-value green">¥${fmt(totalProfit)}</div>
+        <div class="stat-sub">${profitRate !== null ? profitRate.toFixed(1)+'%' : '-'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">${label} 仕入れ</div>
+        <div class="stat-value">¥${fmt(totalPurchase)}</div>
+        <div class="stat-sub">${purchaseFiltered.length}件</div>
+      </div>
+    </div>
+  `;
+}
+
+function svgPieChart(slices, size) {
+  size = size || 140;
+  if (!slices.length) return '';
+  const total = slices.reduce((s,x) => s + x.val, 0);
+  if (!total) return '';
+  let angle = -Math.PI / 2;
+  const cx = size/2, cy = size/2, r = size/2 - 6, cr = r * 0.42;
+  const paths = slices.map(function(s) {
+    const a = (s.val / total) * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(angle);
+    const y1 = cy + r * Math.sin(angle);
+    angle += a;
+    const x2 = cx + r * Math.cos(angle);
+    const y2 = cy + r * Math.sin(angle);
+    const large = a > Math.PI ? 1 : 0;
+    return '<path d="M'+cx+','+cy+' L'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+r+','+r+' 0 '+large+',1 '+x2.toFixed(1)+','+y2.toFixed(1)+' Z" fill="'+s.color+'" opacity="0.88"/>';
+  });
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'+paths.join('')+'<circle cx="'+cx+'" cy="'+cy+'" r="'+cr+'" fill="white"/></svg>';
+}
+
+function renderGenreStats(items) {
+  const area = document.getElementById('genre-stats');
+  if (!area) return;
+  const sold = items.filter(i => i.status === 'sold');
+  const genreNames = [...new Set(sold.map(i => i.genre).filter(Boolean))];
+  if (!genreNames.length) {
+    area.innerHTML = '<div class="empty"><p>売却データなし</p></div>';
+    return;
+  }
+  const palette = ['#4F46E5','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16','#F97316','#64748B'];
+  const stats = genreNames.map(function(g, i) {
+    const gs = sold.filter(function(it){ return it.genre === g; });
+    const sales  = gs.reduce(function(s,it){ return s + (it.salePrice || 0); }, 0);
+    const profit = gs.reduce(function(s,it){ return s + (calcItem(it).profit || 0); }, 0);
+    return { g: g, count: gs.length, sales: sales, profit: profit, color: palette[i % palette.length] };
+  }).sort(function(a,b){ return b.sales - a.sales; });
+  const totalSales = stats.reduce(function(s,x){ return s + x.sales; }, 0);
+  const pie = svgPieChart(stats.map(function(s){ return {val: s.sales, color: s.color}; }), 140);
+  area.innerHTML = '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">'
+    + '<div style="flex-shrink:0">'+pie+'</div>'
+    + '<div style="flex:1;min-width:200px"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">'
+    + stats.map(function(s){
+        const pct = totalSales ? (s.sales / totalSales * 100).toFixed(1) : '0';
+        return '<div style="background:var(--gray-50);border-radius:10px;padding:10px 12px;border-left:3px solid '+s.color+'">'
+          + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
+          + '<span style="width:8px;height:8px;border-radius:50%;background:'+s.color+';flex-shrink:0"></span>'
+          + '<span style="font-size:12px;font-weight:700;color:var(--gray-600)">'+s.g+'</span></div>'
+          + '<div style="font-size:16px;font-weight:700;color:var(--primary)">¥'+fmt(s.sales)+'</div>'
+          + '<div style="font-size:11px;color:var(--success);font-weight:600">利益 ¥'+fmt(s.profit)+'</div>'
+          + '<div style="font-size:11px;color:var(--gray-400)">'+s.count+'件 / '+pct+'%</div></div>';
+      }).join('')
+    + '</div></div></div>';
 }
 
 function switchYear(year) {
@@ -939,7 +1056,6 @@ let invFilters = { status: '', genre: '', platform: '', q: '' };
 
 function renderInventory(el) {
   const settings = getSettings();
-  try {
   el.innerHTML = `
     <div class="filters">
       <input type="text" placeholder="🔍 ブランド・商品名で検索" id="inv-q" value="${invFilters.q}" oninput="invFilters.q=this.value;renderInventoryTable()" style="min-width:180px">
@@ -964,9 +1080,6 @@ function renderInventory(el) {
     </div>
   `;
   renderInventoryTable();
-  } catch(e) {
-    el.innerHTML = `<div style="padding:24px;color:var(--danger)">表示エラー: ${e.message}</div>`;
-  }
 }
 
 function renderInventoryTable() {
@@ -979,11 +1092,7 @@ function renderInventoryTable() {
     const q = f.q.toLowerCase();
     items = items.filter(i=>(i.brand||'').toLowerCase().includes(q)||(i.details||'').toLowerCase().includes(q));
   }
-  items = items.slice().sort((a,b)=>{
-    const na = (a.no != null && a.no !== '' && !isNaN(a.no)) ? Number(a.no) : -1;
-    const nb = (b.no != null && b.no !== '' && !isNaN(b.no)) ? Number(b.no) : -1;
-    return nb - na;
-  });
+  items = items.slice().sort((a,b)=>b.no-a.no);
 
   const area = document.getElementById('inv-table-area');
   if (!area) return;
@@ -1087,7 +1196,7 @@ function renderAdd(el) {
         </div>
         <div class="form-group">
           <label>仕入れ先 <span style="color:var(--danger)">*</span></label>
-          <input type="text" id="a-source" placeholder="例：セカンドストリート 大宮店" list="source-list" autocomplete="off" value="${_lastSource}">
+          <input type="text" id="a-source" placeholder="例：セカンドストリート 大宮店" list="source-list" autocomplete="off">
           <datalist id="source-list">
             ${settings.purchaseSources.map(s=>`<option value="${s}">`).join('')}
           </datalist>
@@ -1172,31 +1281,37 @@ function submitAdd() {
     shippingMethod: null, shippingCost: 0, commission: 0, boxCost: 0
   };
   items.push(newItem);
-  _lastSource = source;
   saveItems(items);
-  // 在庫一覧のフィルターをリセット（次回在庫一覧を開いたとき全件表示される）
-  invFilters.status = '';
-  invFilters.genre = '';
-  invFilters.platform = '';
-  invFilters.q = '';
-  toast('✅ No.' + newItem.no + ' 登録完了', 3000);
+  toast('✅ 商品を登録しました');
   clearAddForm();
 }
 
 // ==================== SELL LIST ====================
+let sellFilters = { genre: '', status: '' };
+
 function renderSellList(el) {
-  const items = getItems().filter(i => i.status !== 'sold').sort((a,b)=>{
-    const na = (a.no != null && a.no !== '' && !isNaN(a.no)) ? Number(a.no) : -1;
-    const nb = (b.no != null && b.no !== '' && !isNaN(b.no)) ? Number(b.no) : -1;
-    return nb - na;
-  });
+  const settings = getSettings();
+  let items = getItems().filter(i => i.status !== 'sold').sort((a,b)=>b.no-a.no);
+  if (sellFilters.genre)  items = items.filter(i => i.genre === sellFilters.genre);
+  if (sellFilters.status) items = items.filter(i => (i.status || 'unlisted') === sellFilters.status);
   el.innerHTML = `
+    <div class="filters">
+      <select onchange="sellFilters.genre=this.value;renderSellList(document.getElementById('content'))">
+        <option value="">全ジャンル</option>
+        ${settings.genres.map(g=>`<option value="${g}" ${sellFilters.genre===g?'selected':''}>${g}</option>`).join('')}
+      </select>
+      <select onchange="sellFilters.status=this.value;renderSellList(document.getElementById('content'))">
+        <option value="">全ステータス</option>
+        <option value="unlisted" ${sellFilters.status==='unlisted'?'selected':''}>未出品</option>
+        <option value="listed" ${sellFilters.status==='listed'?'selected':''}>出品中</option>
+      </select>
+    </div>
     <div class="card">
       <div class="card-title">売却する商品を選んでください</div>
       <div style="font-size:12px;color:var(--gray-400);margin-bottom:12px">
         💡 2件以上チェックして「まとめ売り」ボタンを押すと、まとめ売り記録ができます
       </div>
-      ${!items.length ? '<div class="empty"><div class="empty-icon">🎉</div><p>売却待ちの商品がありません</p></div>' : `
+      ${!items.length ? '<div class="empty"><div class="empty-icon">🎉</div><p>該当する商品がありません</p></div>' : `
       <div class="table-scroll"><table>
         <thead>
           <tr>
@@ -1934,7 +2049,6 @@ function renderSettings(el) {
       <button class="btn btn-primary" onclick="forceSyncNow()">☁️ このデバイスから送信する</button>
       <p style="font-size:13px;color:var(--gray-500);margin-top:12px;margin-bottom:8px">📥 <strong>受信：</strong>クラウドの最新データをこのデバイスに取り込む</p>
       <button class="btn btn-outline" onclick="pullFromFirestore()">⬇️ クラウドから取得する</button>
-      <button class="btn btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="forceReplaceFromFirestore()">🔄 クラウドで完全上書き</button>
     </div>
     <div class="card" style="margin-top:16px">
       <div class="card-title" style="color:var(--danger)">データ管理</div>
@@ -1953,7 +2067,11 @@ function renderSettingSection(title, items, key) {
     <ul class="settings-list" id="list-${key}">
       ${items.map((item,i)=>`<li>
         <span>${item}</span>
-        <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="removeSettingItem('${key}',${i})">削除</button>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-outline btn-sm" onclick="moveSettingItem('${key}',${i},-1)" ${i===0?'disabled':''} style="padding:4px 8px;line-height:1">↑</button>
+          <button class="btn btn-outline btn-sm" onclick="moveSettingItem('${key}',${i},1)" ${i===items.length-1?'disabled':''} style="padding:4px 8px;line-height:1">↓</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="removeSettingItem('${key}',${i})">削除</button>
+        </div>
       </li>`).join('')}
     </ul>
     <div class="add-tag-row">
@@ -1961,6 +2079,16 @@ function renderSettingSection(title, items, key) {
       <button class="btn btn-primary btn-sm" onclick="addSettingItem('${key}')">追加</button>
     </div>
   </div>`;
+}
+
+function moveSettingItem(key, idx, dir) {
+  const s = getSettings();
+  const arr = s[key];
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= arr.length) return;
+  const tmp = arr[idx]; arr[idx] = arr[newIdx]; arr[newIdx] = tmp;
+  saveSettings(s);
+  renderSettings(document.getElementById('content'));
 }
 
 function addSettingItem(key) {
@@ -2256,39 +2384,22 @@ function executeImport() {
 }
 
 async function forceSyncNow() {
-  toast('☁️ 送信準備中...', 0);
-  if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 8000); return; }
+  // このデバイスの全データをFirestoreに強制送信（進捗はtoastで表示）
+  if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 4000); return; }
   _syncBusy = true;
   try {
     await _db.enableNetwork();
     const now = Date.now();
     const allItems = getItems().map(i => ({..._clean(i), _updatedAt: now}));
     const col = _db.collection('inventory');
-    const newIds = new Set(allItems.map(i => String(i.id)));
-
-    // Firestoreにある不要なドキュメント（古い壊れたデータ）を削除
-    toast('☁️ 古いデータ確認中...', 0);
-    const existing = await col.get({source: 'server'});
-    const toDelete = existing.docs.filter(d => !newIds.has(d.id));
-    if (toDelete.length > 0) {
-      toast(`☁️ 古いデータ${toDelete.length}件削除中...`, 0);
-      const CHUNK = 20;
-      for (let i = 0; i < toDelete.length; i += CHUNK) {
-        await Promise.all(toDelete.slice(i, i+CHUNK).map(d => d.ref.delete()));
-      }
-    }
-
-    // ローカルデータを送信
-    toast(`☁️ 送信開始（${allItems.length}件）...`, 0);
     const CHUNK = 20;
     for (let i = 0; i < allItems.length; i += CHUNK) {
       await Promise.all(allItems.slice(i, i+CHUNK).map(item => col.doc(String(item.id)).set(item)));
       toast(`☁️ 送信中... ${Math.min(i+CHUNK, allItems.length)}/${allItems.length}件`, 0);
     }
-    _fsIds = newIds;
-    toast(`✅ 送信完了（${allItems.length}件）`, 8000);
+    toast(`✅ 送信完了（${allItems.length}件）`, 4000);
   } catch(e) {
-    toast('❌ 送信エラー: ' + e.message, 8000);
+    toast('❌ 送信エラー: ' + e.message, 5000);
     console.error('forceSyncNow error:', e);
   } finally {
     _syncBusy = false;
@@ -2296,6 +2407,7 @@ async function forceSyncNow() {
 }
 
 async function pullFromFirestore() {
+  // Firestoreから最新データを強制取得（進捗はtoastで表示）
   if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 4000); return; }
   _syncBusy = true;
   toast('⬇️ Firestoreから取得中...', 0);
@@ -2311,27 +2423,6 @@ async function pullFromFirestore() {
   } catch(e) {
     toast('❌ 取得エラー: ' + e.message, 5000);
     console.error('pullFromFirestore error:', e);
-  } finally {
-    _syncBusy = false;
-  }
-}
-
-async function forceReplaceFromFirestore() {
-  // マージなし・完全上書き取得（ローカルデータをクラウドで完全に置き換える）
-  if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 4000); return; }
-  _syncBusy = true;
-  toast('🔄 クラウドから完全取得中...', 0);
-  try {
-    await _db.enableNetwork();
-    const snapshot = await _db.collection('inventory').get({source: 'server'});
-    const fsItems = snapshot.docs.map(d => d.data());
-    _fsIds = new Set(snapshot.docs.map(d => d.id));
-    localStorage.setItem(DB_KEY, JSON.stringify(fsItems));
-    toast(`✅ 完全取得完了（${fsItems.length}件）`, 4000);
-    navigateTo('inventory');
-  } catch(e) {
-    toast('❌ 取得エラー: ' + e.message, 5000);
-    console.error('forceReplaceFromFirestore error:', e);
   } finally {
     _syncBusy = false;
   }
