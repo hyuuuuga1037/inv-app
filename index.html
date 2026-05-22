@@ -811,7 +811,7 @@ function renderDashboard(el) {
       <div id="monthly-table-area"></div>
     </div>
     <div class="card" style="margin-top:0">
-      <div class="card-title">販売先別 売上</div>
+      <div class="card-title">販売先別 実績（当月）</div>
       <div id="platform-stats"></div>
     </div>
     <div class="card" style="margin-top:0">
@@ -916,9 +916,10 @@ function renderGenreStats(items) {
           + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
           + '<span style="width:8px;height:8px;border-radius:50%;background:'+s.color+';flex-shrink:0"></span>'
           + '<span style="font-size:12px;font-weight:700;color:var(--gray-600)">'+s.g+'</span></div>'
-          + '<div style="font-size:16px;font-weight:700;color:var(--primary)">¥'+fmt(s.sales)+'</div>'
-          + '<div style="font-size:11px;color:var(--success);font-weight:600">利益 ¥'+fmt(s.profit)+'</div>'
-          + '<div style="font-size:11px;color:var(--gray-400)">'+s.count+'件 / '+pct+'%</div></div>';
+          + '<div style="font-size:14px;font-weight:700;color:var(--primary)">¥'+fmt(s.sales)+'</div>'
+          + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:2px">'+s.count+'件 / '+pct+'%</div>'
+          + '<div style="font-size:20px;font-weight:700;color:var(--success)">¥'+fmt(s.profit)+'</div>'
+          + '<div style="font-size:11px;color:var(--gray-400)">利益</div></div>';
       }).join('')
     + '</div></div></div>';
 }
@@ -998,27 +999,37 @@ function renderMonthlyTable(year, items) {
 }
 
 function renderPlatformStats(items) {
-  const sold = items.filter(i=>i.status==='sold');
+  const now = new Date();
+  const currentMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const sold = items.filter(i => i.status==='sold' && i.saleDate && i.saleDate.startsWith(currentMonth));
   const platforms = [...new Set(sold.map(i=>i.platform).filter(Boolean))];
   if (!platforms.length) {
-    document.getElementById('platform-stats').innerHTML = '<div class="empty"><p>売却データなし</p></div>';
+    document.getElementById('platform-stats').innerHTML = '<div class="empty"><p>当月の売却データなし</p></div>';
     return;
   }
+  const PLATFORM_COLORS = {
+    'メルカリ':     { bg: '#FECDD3', color: '#9F1239' },
+    'ヤフーフリマ': { bg: '#FEF3C7', color: '#92400E' },
+    'ラクマ':       { bg: '#FCE7F3', color: '#9D174D' },
+    'ヤフオク':     { bg: '#FEF9C3', color: '#713F12' },
+  };
   const stats = platforms.map(p => {
     const ps = sold.filter(i=>i.platform===p);
     const sales = ps.reduce((s,i)=>s+(i.salePrice||0),0);
     const profit = ps.reduce((s,i)=>s+(calcItem(i).profit||0),0);
-    return { p, count: ps.length, sales, profit };
-  }).sort((a,b)=>b.sales-a.sales);
+    const col = PLATFORM_COLORS[p] || { bg: 'var(--gray-100)', color: 'var(--gray-700)' };
+    return { p, count: ps.length, sales, profit, bg: col.bg, color: col.color };
+  }).sort((a,b)=>b.profit-a.profit);
 
   document.getElementById('platform-stats').innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
       ${stats.map(s=>`
-        <div style="background:var(--gray-50);border-radius:10px;padding:12px 14px">
-          <div style="font-size:12px;font-weight:700;color:var(--gray-500);margin-bottom:6px">${s.p}</div>
-          <div style="font-size:18px;font-weight:700;color:var(--primary)">¥${fmt(s.sales)}</div>
-          <div style="font-size:12px;color:var(--success);font-weight:600">利益 ¥${fmt(s.profit)}</div>
-          <div style="font-size:11px;color:var(--gray-400)">${s.count}件</div>
+        <div style="background:${s.bg};border-radius:10px;padding:12px 14px">
+          <div style="font-size:12px;font-weight:700;color:${s.color};margin-bottom:6px">${s.p}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--primary)">¥${fmt(s.sales)}</div>
+          <div style="font-size:11px;color:var(--gray-500);margin-bottom:4px">${s.count}件</div>
+          <div style="font-size:22px;font-weight:700;color:var(--success)">¥${fmt(s.profit)}</div>
+          <div style="font-size:11px;color:var(--gray-400)">利益</div>
         </div>
       `).join('')}
     </div>
