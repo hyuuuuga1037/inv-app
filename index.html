@@ -815,7 +815,7 @@ function renderDashboard(el) {
       <div id="platform-stats"></div>
     </div>
     <div class="card" style="margin-top:0">
-      <div class="card-title">ジャンル別 売上</div>
+      <div class="card-title">ジャンル別 売上（当月）</div>
       <div id="genre-stats"></div>
     </div>
   `;
@@ -889,10 +889,13 @@ function svgPieChart(slices, size) {
 function renderGenreStats(items) {
   const area = document.getElementById('genre-stats');
   if (!area) return;
-  const sold = items.filter(i => i.status === 'sold');
+  const now = new Date();
+  const currentMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const monthLabel = now.getFullYear() + '年' + (now.getMonth()+1) + '月';
+  const sold = items.filter(i => i.status === 'sold' && i.saleDate && i.saleDate.startsWith(currentMonth));
   const genreNames = [...new Set(sold.map(i => i.genre).filter(Boolean))];
   if (!genreNames.length) {
-    area.innerHTML = '<div class="empty"><p>売却データなし</p></div>';
+    area.innerHTML = '<div class="empty"><p>' + monthLabel + 'の売却データなし</p></div>';
     return;
   }
   const palette = ['#4F46E5','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16','#F97316','#64748B'];
@@ -1092,7 +1095,11 @@ function renderInventoryTable() {
     const q = f.q.toLowerCase();
     items = items.filter(i=>(i.brand||'').toLowerCase().includes(q)||(i.details||'').toLowerCase().includes(q));
   }
-  items = items.slice().sort((a,b)=>b.no-a.no);
+  items = items.slice().sort((a,b)=>{
+    const na = (a.no != null && a.no !== '' && !isNaN(a.no)) ? Number(a.no) : -1;
+    const nb = (b.no != null && b.no !== '' && !isNaN(b.no)) ? Number(b.no) : -1;
+    return nb - na;
+  });
 
   const area = document.getElementById('inv-table-area');
   if (!area) return;
@@ -1291,7 +1298,11 @@ let sellFilters = { genre: '', status: '' };
 
 function renderSellList(el) {
   const settings = getSettings();
-  let items = getItems().filter(i => i.status !== 'sold').sort((a,b)=>b.no-a.no);
+  let items = getItems().filter(i => i.status !== 'sold').sort((a,b)=>{
+    const na = (a.no != null && a.no !== '' && !isNaN(a.no)) ? Number(a.no) : -1;
+    const nb = (b.no != null && b.no !== '' && !isNaN(b.no)) ? Number(b.no) : -1;
+    return nb - na;
+  });
   if (sellFilters.genre)  items = items.filter(i => i.genre === sellFilters.genre);
   if (sellFilters.status) items = items.filter(i => (i.status || 'unlisted') === sellFilters.status);
   el.innerHTML = `
