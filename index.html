@@ -811,6 +811,9 @@ function renderDashboard(el) {
       <div id="monthly-table-area"></div>
     </div>
     <div class="card" style="margin-top:0">
+      <div id="current-month-summary"></div>
+    </div>
+    <div class="card" style="margin-top:0">
       <div class="card-title">販売先別 実績（当月）</div>
       <div id="platform-stats"></div>
     </div>
@@ -822,8 +825,44 @@ function renderDashboard(el) {
 
   renderSummaryStats(_summaryYear, items);
   renderMonthlyTable(_dashActiveYear, items);
+  renderCurrentMonthSummary(items);
   renderPlatformStats(items);
   renderGenreStats(items);
+}
+
+function renderCurrentMonthSummary(items) {
+  const area = document.getElementById('current-month-summary');
+  if (!area) return;
+  const now = new Date();
+  const prefix = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const label = now.getFullYear() + '年' + (now.getMonth()+1) + '月';
+  const sold = items.filter(i => i.status==='sold' && i.saleDate && i.saleDate.startsWith(prefix));
+  const sales  = sold.reduce((s,i) => s+(i.salePrice||0), 0);
+  const profit = sold.reduce((s,i) => s+(calcItem(i).profit||0), 0);
+  const rate   = sales ? (profit/sales*100).toFixed(1) : '-';
+  area.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div style="font-size:14px;font-weight:700;color:var(--gray-700)">${label} 実績</div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:11px;color:var(--gray-400)">売上</div>
+          <div style="font-size:18px;font-weight:700;color:var(--primary)">¥${fmt(sales)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--gray-400)">利益</div>
+          <div style="font-size:22px;font-weight:700;color:var(--success)">¥${fmt(profit)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--gray-400)">利益率</div>
+          <div style="font-size:18px;font-weight:700;color:var(--success)">${rate}%</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--gray-400)">取引件数</div>
+          <div style="font-size:18px;font-weight:700;color:var(--gray-700)">${sold.length}件</div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function switchSummaryYear(year) {
@@ -886,6 +925,48 @@ function svgPieChart(slices, size) {
   return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'+paths.join('')+'<circle cx="'+cx+'" cy="'+cy+'" r="'+cr+'" fill="white"/></svg>';
 }
 
+function svgPieChartWithLabels(slices, size) {
+  // size = display width, chart is laid out in a fixed coordinate space
+  size = size || 340;
+  if (!slices.length) return '';
+  const total = slices.reduce((s,x) => s + x.val, 0);
+  if (!total) return '';
+  // Fixed coordinate space: 380 wide x 300 tall, chart centered at (185,150)
+  const VW = 380, VH = 300;
+  const cx = 185, cy = 150, r = 95, cr = Math.round(r * 0.42);
+  let angle = -Math.PI / 2;
+  const parts = [];
+  slices.forEach(function(s) {
+    if (!s.val) return;
+    const a = (s.val / total) * 2 * Math.PI;
+    const mid = angle + a / 2;
+    const x1 = cx + r * Math.cos(angle);
+    const y1 = cy + r * Math.sin(angle);
+    angle += a;
+    const x2 = cx + r * Math.cos(angle);
+    const y2 = cy + r * Math.sin(angle);
+    const large = a > Math.PI ? 1 : 0;
+    const pct = (s.val / total * 100).toFixed(1);
+    const pctNum = s.val / total * 100;
+    parts.push('<path d="M'+cx+','+cy+' L'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+r+','+r+' 0 '+large+',1 '+x2.toFixed(1)+','+y2.toFixed(1)+' Z" fill="'+s.color+'" opacity="0.88"/>');
+    if (pctNum >= 3) {
+      const lineDist = r + 8;
+      const labelDist = pctNum < 9 ? r + 46 : r + 30;
+      const lx = cx + lineDist * Math.cos(mid);
+      const ly = cy + lineDist * Math.sin(mid);
+      const tx = cx + labelDist * Math.cos(mid);
+      const ty = cy + labelDist * Math.sin(mid);
+      const anchor = Math.cos(mid) >= 0 ? 'start' : 'end';
+      const ox = Math.cos(mid) >= 0 ? 3 : -3;
+      parts.push('<line x1="'+lx.toFixed(1)+'" y1="'+ly.toFixed(1)+'" x2="'+tx.toFixed(1)+'" y2="'+ty.toFixed(1)+'" stroke="'+s.color+'" stroke-width="1.5" opacity="0.7"/>');
+      parts.push('<text x="'+(tx+ox).toFixed(1)+'" y="'+(ty-5).toFixed(1)+'" font-size="11" font-weight="700" fill="'+s.color+'" text-anchor="'+anchor+'">'+s.label+'</text>');
+      parts.push('<text x="'+(tx+ox).toFixed(1)+'" y="'+(ty+8).toFixed(1)+'" font-size="11" fill="'+s.color+'" text-anchor="'+anchor+'">'+pct+'%</text>');
+    }
+  });
+  parts.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+cr+'" fill="white"/>');
+  return '<svg width="100%" viewBox="0 0 '+VW+' '+VH+'" style="max-width:'+size+'px;overflow:visible;display:block;margin:0 auto">'+parts.join('')+'</svg>';
+}
+
 function renderGenreStats(items) {
   const area = document.getElementById('genre-stats');
   if (!area) return;
@@ -906,10 +987,9 @@ function renderGenreStats(items) {
     return { g: g, count: gs.length, sales: sales, profit: profit, color: palette[i % palette.length] };
   }).sort(function(a,b){ return b.sales - a.sales; });
   const totalSales = stats.reduce(function(s,x){ return s + x.sales; }, 0);
-  const pie = svgPieChart(stats.map(function(s){ return {val: s.sales, color: s.color}; }), 140);
-  area.innerHTML = '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">'
-    + '<div style="flex-shrink:0">'+pie+'</div>'
-    + '<div style="flex:1;min-width:200px"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">'
+  const pie = svgPieChartWithLabels(stats.map(function(s){ return {val: s.sales, color: s.color, label: s.g}; }), 340);
+  area.innerHTML = '<div style="display:flex;justify-content:center;margin-bottom:20px">'+pie+'</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'
     + stats.map(function(s){
         const pct = totalSales ? (s.sales / totalSales * 100).toFixed(1) : '0';
         return '<div style="background:var(--gray-50);border-radius:10px;padding:10px 12px;border-left:3px solid '+s.color+'">'
@@ -921,7 +1001,7 @@ function renderGenreStats(items) {
           + '<div style="font-size:20px;font-weight:700;color:var(--success)">¥'+fmt(s.profit)+'</div>'
           + '<div style="font-size:11px;color:var(--gray-400)">利益</div></div>';
       }).join('')
-    + '</div></div></div>';
+    + '</div>';
 }
 
 function switchYear(year) {
