@@ -1205,7 +1205,7 @@ function renderInventoryTable() {
         <th style="width:32px"></th>
         <th>No</th><th>ステータス</th><th>ジャンル</th><th style="width:120px">ブランド</th>
         <th style="min-width:200px">商品詳細</th><th>サイズ</th><th>仕入値</th><th style="width:90px">仕入れ先</th>
-        <th>仕入日</th><th>販売先</th><th>販売額</th><th>利益</th><th>利益率</th>
+        <th>仕入日</th><th>担当者</th><th>販売先</th><th>販売額</th><th>利益</th><th>利益率</th>
         <th style="text-align:center">操作</th>
       </tr>
     </thead>
@@ -1233,6 +1233,7 @@ function renderInventoryTable() {
           <td>¥${fmt(item.purchasePrice||0)}${item.extraCost ? `<br><small style="color:var(--danger);font-size:11px">+取下げ¥${fmt(item.extraCost)}</small>` : ''}</td>
           <td style="font-size:12px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.purchaseSource||''}">${item.purchaseSource||'-'}</td>
           <td style="font-size:12px">${item.purchaseDate||'-'}</td>
+          <td style="font-size:12px;text-align:center">${item.assignee ? `<span class="badge badge-platform">${item.assignee}さん</span>` : '<span style="color:var(--gray-400)">自分</span>'}</td>
           <td>${item.platform ? `<span class="badge badge-platform">${item.platform}</span>` : '-'}</td>
           <td>${item.salePrice ? '¥'+fmt(item.salePrice) : '-'}</td>
           <td class="${c.profit!=null?(c.profit>=0?'profit-pos':'profit-neg'):''}">${c.profit!=null?'¥'+fmt(c.profit):'-'}</td>
@@ -1310,6 +1311,14 @@ function renderAdd(el) {
             <option value="listed">出品中</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>担当者</label>
+          <select id="a-assignee">
+            <option value="">自分（手元）</option>
+            <option value="A">奥村さん</option>
+            <option value="B">相川さん</option>
+          </select>
+        </div>
       </div>
       <div class="form-actions">
         <button class="btn btn-outline" onclick="clearAddForm()">クリア</button>
@@ -1320,14 +1329,20 @@ function renderAdd(el) {
 }
 
 function clearAddForm() {
+  // 仕入れ先・仕入れ日・担当者は引き継ぐ
   const keepSource = document.getElementById('a-source')?.value || '';
-  ['a-genre','a-brand','a-details','a-size','a-price','a-source'].forEach(id => {
+  const keepDate   = document.getElementById('a-date')?.value   || '';
+  const keepAssignee = document.getElementById('a-assignee')?.value || '';
+  ['a-genre','a-brand','a-details','a-size','a-price'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
-  // 仕入れ先は引き継ぐ
   const srcEl = document.getElementById('a-source');
   if (srcEl) srcEl.value = keepSource;
+  const dateEl = document.getElementById('a-date');
+  if (dateEl) dateEl.value = keepDate;
+  const assigneeEl = document.getElementById('a-assignee');
+  if (assigneeEl) assigneeEl.value = keepAssignee;
 }
 
 function setListed(itemId) {
@@ -1374,6 +1389,7 @@ function submitAdd() {
     purchaseSource: source,
     purchaseDate: date,
     status: document.getElementById('a-status').value,
+    assignee: document.getElementById('a-assignee').value,
     // sale fields empty
     saleDate: null, salePrice: null, platform: null,
     shippingMethod: null, shippingCost: 0, commission: 0, boxCost: 0
@@ -2048,6 +2064,14 @@ function openEditModal(itemId) {
           <option value="sold" ${item.status==='sold'?'selected':''}>売却済み</option>
         </select>
       </div>
+      <div class="form-group">
+        <label>担当者</label>
+        <select id="e-assignee">
+          <option value="" ${!item.assignee?'selected':''}>自分（手元）</option>
+          <option value="A" ${item.assignee==='A'?'selected':''}>奥村さん</option>
+          <option value="B" ${item.assignee==='B'?'selected':''}>相川さん</option>
+        </select>
+      </div>
       ${item.status==='sold' ? `
       <div class="form-group" style="grid-column:span 2"><div class="section-divider"></div></div>
       <div class="form-group">
@@ -2103,6 +2127,7 @@ function submitEdit(itemId) {
     purchaseSource: document.getElementById('e-source').value,
     purchaseDate: document.getElementById('e-date').value,
     status,
+    assignee: document.getElementById('e-assignee')?.value || '',
     ...(status==='sold' ? {
       platform: document.getElementById('e-platform')?.value,
       saleDate: document.getElementById('e-saledate')?.value,
