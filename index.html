@@ -1184,6 +1184,7 @@ function renderInventory(el) {
 }
 
 function renderInventoryTable() {
+  const scrollY = window.scrollY;
   let items = getItems();
   const f = invFilters;
   if (f.status) items = items.filter(i=>(i.status||'unlisted')===f.status);
@@ -1263,6 +1264,7 @@ function renderInventoryTable() {
       }).join('')}
     </tbody>
   </table>`;
+  requestAnimationFrame(() => window.scrollTo(0, scrollY));
 }
 
 function showBundleGroup(bundleId) {
