@@ -637,26 +637,26 @@ function _push(items) {
 
 function forceSync() {
   const items = getItems();
-  if (!_db) { alert('Firestore未接続です'); return; }
-  _dot('#F59E0B', '強制同期中...');
+  if (!_db) { toast('❌ Firestore未接続'); return; }
+  _dot('#F59E0B', '同期中...');
   const col = _db.collection('inventory');
-  const batch_size = 500;
-  let count = 0;
-  const writeAll = async () => {
-    for (let i = 0; i < items.length; i += batch_size) {
-      const batch = _db.batch();
-      items.slice(i, i + batch_size).forEach(item => {
-        batch.set(col.doc(String(item.id)), _clean(item));
+  let done = 0, errors = 0;
+  items.forEach(item => {
+    col.doc(String(item.id)).set(_clean(item))
+      .then(() => {
+        done++;
+        if (done + errors === items.length) {
+          _dot('#10B981', `同期完了 ${done}件`);
+          toast(`✅ ${done}件を同期しました`);
+        }
+      })
+      .catch(() => {
+        errors++;
+        if (done + errors === items.length) {
+          _dot(errors > 0 ? '#EF4444' : '#10B981', `完了 成功:${done} 失敗:${errors}`);
+          toast(`完了 成功:${done}件 失敗:${errors}件`);
+        }
       });
-      await batch.commit();
-      count += Math.min(batch_size, items.length - i);
-    }
-    _dot('#10B981', `強制同期完了 ${count}件`);
-    toast(`✅ ${count}件をFirestoreに同期しました`);
-  };
-  writeAll().catch(e => {
-    _dot('#EF4444', 'エラー: ' + e.message);
-    toast('❌ 同期エラー: ' + e.message);
   });
 }
 
