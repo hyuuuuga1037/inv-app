@@ -637,6 +637,9 @@ function _push(items) {
 
 function forceSync() {
   const items = getItems();
+  const bCount = items.filter(i => i.assignee === 'B').length;
+  const aCount = items.filter(i => i.assignee === 'A').length;
+  alert(`localStorage内の担当者データ\n奥村さん(A): ${aCount}件\n相川さん(B): ${bCount}件\n合計: ${items.length}件`);
   if (!_db) { toast('❌ Firestore未接続'); return; }
   _dot('#F59E0B', '同期中...');
   const col = _db.collection('inventory');
