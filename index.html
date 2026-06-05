@@ -636,10 +636,18 @@ function _push(items) {
 }
 
 function forceSync() {
-  const items = getItems();
-  const bCount = items.filter(i => i.assignee === 'B').length;
-  const aCount = items.filter(i => i.assignee === 'A').length;
-  alert(`localStorage内の担当者データ\n奥村さん(A): ${aCount}件\n相川さん(B): ${bCount}件\n合計: ${items.length}件`);
+  // 旧形式(A/B)を新形式(名前)に移行してからFirestoreに書き込む
+  const rawItems = getItems();
+  const items = rawItems.map(item => {
+    if (item.assignee === 'A') return {...item, assignee: '奥村'};
+    if (item.assignee === 'B') return {...item, assignee: '相川'};
+    return item;
+  });
+  // LocalStorageも更新
+  localStorage.setItem(DB_KEY, JSON.stringify(items));
+  const okCount = items.filter(i => i.assignee === '奥村').length;
+  const aiCount = items.filter(i => i.assignee === '相川').length;
+  if (!confirm(`Firestoreに同期します。\n奥村さん: ${okCount}件\n相川さん: ${aiCount}件\n合計: ${items.length}件`)) return;
   if (!_db) { toast('❌ Firestore未接続'); return; }
   _dot('#F59E0B', '同期中...');
   const col = _db.collection('inventory');
@@ -1275,8 +1283,8 @@ function renderInventoryTable() {
             <select onchange="changeAssignee(${item.id},this.value)" onclick="event.stopPropagation()"
               style="padding:3px 6px;border-radius:6px;font-size:11px;border:1px solid var(--gray-200);background:white;cursor:pointer;font-family:inherit">
               <option value="" ${!item.assignee?'selected':''}>自分</option>
-              <option value="A" ${item.assignee==='A'?'selected':''}>奥村さん</option>
-              <option value="B" ${item.assignee==='B'?'selected':''}>相川さん</option>
+              <option value="奥村" ${(item.assignee==='奥村'||item.assignee==='A')?'selected':''}>奥村さん</option>
+              <option value="相川" ${(item.assignee==='相川'||item.assignee==='B')?'selected':''}>相川さん</option>
             </select>
           </td>
           <td>${item.platform ? `<span class="badge badge-platform">${item.platform}</span>` : '-'}</td>
@@ -1361,8 +1369,8 @@ function renderAdd(el) {
           <label>担当者</label>
           <select id="a-assignee">
             <option value="">自分（手元）</option>
-            <option value="A">奥村さん</option>
-            <option value="B">相川さん</option>
+            <option value="奥村">奥村さん</option>
+            <option value="相川">相川さん</option>
           </select>
         </div>
       </div>
@@ -1415,7 +1423,7 @@ function changeAssignee(itemId, value) {
         _db.collection('inventory').doc(String(itemId)).set(_clean(items[idx]));
       });
   }
-  const label = value === 'A' ? '奥村さん' : value === 'B' ? '相川さん' : '自分（手元）';
+  const label = value === '奥村' ? '奥村さん' : value === '相川' ? '相川さん' : '自分（手元）';
   toast(`👤 担当者を「${label}」に変更しました`);
 }
 
@@ -1423,10 +1431,9 @@ function bulkAssignAssignee(value) {
   const sel = document.getElementById('sel-assignee-select');
   if (sel) setTimeout(() => { sel.value = ''; }, 300);
   if (selectedItems.size === 0) return;
-  const label = value === 'A' ? '奥村さん' : value === 'B' ? '相川さん' : '自分（手元）';
+  const label = value === '奥村' ? '奥村さん' : value === '相川' ? '相川さん' : '自分（手元）';
   if (!confirm(`選択した ${selectedItems.size} 件の担当者を「${label}」に変更しますか？`)) return;
   const now = Date.now();
-  // LocalStorageを直接更新
   const items = getItems();
   items.forEach((item, idx) => {
     if (selectedItems.has(item.id)) items[idx] = { ...item, assignee: value, _updatedAt: now };
@@ -2159,8 +2166,8 @@ function openEditModal(itemId) {
         <label>担当者</label>
         <select id="e-assignee">
           <option value="" ${!item.assignee?'selected':''}>自分（手元）</option>
-          <option value="A" ${item.assignee==='A'?'selected':''}>奥村さん</option>
-          <option value="B" ${item.assignee==='B'?'selected':''}>相川さん</option>
+          <option value="奥村" ${(item.assignee==='奥村'||item.assignee==='A')?'selected':''}>奥村さん</option>
+          <option value="相川" ${(item.assignee==='相川'||item.assignee==='B')?'selected':''}>相川さん</option>
         </select>
       </div>
       ${item.status==='sold' ? `
