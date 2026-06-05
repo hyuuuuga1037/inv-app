@@ -331,7 +331,9 @@
 <div id="app">
   <!-- Sidebar -->
   <aside id="sidebar">
-    <div class="logo">👔 せどり管理 <span id="sync-dot" title="同期状態確認中..." style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#9CA3AF;margin-left:4px;flex-shrink:0"></span></div>
+    <div class="logo">👔 せどり管理 <span id="sync-dot" title="同期状態確認中..." style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#9CA3AF;margin-left:4px;flex-shrink:0"></span>
+      <button onclick="forceSync()" title="Firestoreに強制同期" style="margin-left:6px;background:none;border:1px solid #ccc;border-radius:4px;font-size:10px;padding:2px 6px;cursor:pointer;color:#666">同期</button>
+    </div>
     <nav>
       <a href="#" class="nav-link active" data-page="dashboard">
         <span class="icon">📊</span> ダッシュボード
@@ -631,6 +633,31 @@ function _push(items) {
   });
   _fsIds = newIds;
   _dot('#10B981', '同期済み ' + new Date().toLocaleTimeString('ja-JP'));
+}
+
+function forceSync() {
+  const items = getItems();
+  if (!_db) { alert('Firestore未接続です'); return; }
+  _dot('#F59E0B', '強制同期中...');
+  const col = _db.collection('inventory');
+  const batch_size = 500;
+  let count = 0;
+  const writeAll = async () => {
+    for (let i = 0; i < items.length; i += batch_size) {
+      const batch = _db.batch();
+      items.slice(i, i + batch_size).forEach(item => {
+        batch.set(col.doc(String(item.id)), _clean(item));
+      });
+      await batch.commit();
+      count += Math.min(batch_size, items.length - i);
+    }
+    _dot('#10B981', `強制同期完了 ${count}件`);
+    toast(`✅ ${count}件をFirestoreに同期しました`);
+  };
+  writeAll().catch(e => {
+    _dot('#EF4444', 'エラー: ' + e.message);
+    toast('❌ 同期エラー: ' + e.message);
+  });
 }
 
 function initFirebase() {
@@ -1371,27 +1398,45 @@ function setListed(itemId) {
 }
 
 function changeAssignee(itemId, value) {
+  // LocalStorageを直接更新
   const items = getItems();
   const idx = items.findIndex(i => i.id === itemId);
   if (idx < 0) return;
-  items[idx] = { ...items[idx], assignee: value };
-  saveItems(items);
+  items[idx] = { ...items[idx], assignee: value, _updatedAt: Date.now() };
+  localStorage.setItem(DB_KEY, JSON.stringify(items));
+  // Firestoreに直接書き込み（saveItems経由だと競合が起きるため）
+  if (_db) {
+    _db.collection('inventory').doc(String(itemId)).update({ assignee: value, _updatedAt: Date.now() })
+      .catch(() => {
+        // ドキュメントが存在しない場合はsetで作成
+        _db.collection('inventory').doc(String(itemId)).set(_clean(items[idx]));
+      });
+  }
   const label = value === 'A' ? '奥村さん' : value === 'B' ? '相川さん' : '自分（手元）';
   toast(`👤 担当者を「${label}」に変更しました`);
 }
 
 function bulkAssignAssignee(value) {
-  // セレクトをリセット
   const sel = document.getElementById('sel-assignee-select');
   if (sel) setTimeout(() => { sel.value = ''; }, 300);
   if (selectedItems.size === 0) return;
   const label = value === 'A' ? '奥村さん' : value === 'B' ? '相川さん' : '自分（手元）';
   if (!confirm(`選択した ${selectedItems.size} 件の担当者を「${label}」に変更しますか？`)) return;
+  const now = Date.now();
+  // LocalStorageを直接更新
   const items = getItems();
   items.forEach((item, idx) => {
-    if (selectedItems.has(item.id)) items[idx] = { ...item, assignee: value };
+    if (selectedItems.has(item.id)) items[idx] = { ...item, assignee: value, _updatedAt: now };
   });
-  saveItems(items);
+  localStorage.setItem(DB_KEY, JSON.stringify(items));
+  // Firestoreに直接書き込み
+  if (_db) {
+    const batch = _db.batch();
+    items.filter(item => selectedItems.has(item.id)).forEach(item => {
+      batch.update(_db.collection('inventory').doc(String(item.id)), { assignee: value, _updatedAt: now });
+    });
+    batch.commit().catch(e => toast('⚠️ 同期エラー: ' + e.message));
+  }
   toast(`👤 ${selectedItems.size}件の担当者を「${label}」に変更しました`);
   clearSelection();
   renderInventory(document.getElementById('content'));
