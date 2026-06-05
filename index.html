@@ -638,10 +638,11 @@ function _push(items) {
 function forceSync() {
   // 旧形式(A/B)を新形式(名前)に移行してからFirestoreに書き込む
   const rawItems = getItems();
+  const now = Date.now() + 3600000; // 1時間未来のタイムスタンプで競合防止
   const items = rawItems.map(item => {
-    if (item.assignee === 'A') return {...item, assignee: '奥村'};
-    if (item.assignee === 'B') return {...item, assignee: '相川'};
-    return item;
+    if (item.assignee === 'A') return {...item, assignee: '奥村', _updatedAt: now};
+    if (item.assignee === 'B') return {...item, assignee: '相川', _updatedAt: now};
+    return {...item, _updatedAt: now};
   });
   // LocalStorageも更新
   localStorage.setItem(DB_KEY, JSON.stringify(items));
