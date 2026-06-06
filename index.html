@@ -613,7 +613,9 @@ function _merge(localItems, fsItems) {
     const id = String(fsItem.id);
     const loc = merged.get(id);
     if (!loc || (fsItem._updatedAt || 0) >= (loc._updatedAt || 0)) {
-      merged.set(id, fsItem);
+      // Firestoreにassigneeがない場合はローカルのassigneeを保護する
+      const assignee = fsItem.assignee || (loc && loc.assignee) || '';
+      merged.set(id, assignee ? { ...fsItem, assignee } : { ...fsItem });
     }
   }
   return [...merged.values()];
@@ -648,9 +650,13 @@ function syncAssignee(itemId, value) {
 }
 
 // 起動時：LocalStorageの担当者データをFirestoreのassigneesコレクションに移行
+let _preFirebaseItems = null; // onSnapshot前のローカルデータを保持
+
 function migrateAssignees() {
   if (!_db) return;
-  const items = getItems().filter(i => i.assignee);
+  // onSnapshotがlocalStorageを上書きする前のデータを使う
+  const items = (_preFirebaseItems || getItems()).filter(i => i.assignee);
+  _preFirebaseItems = null;
   if (!items.length) return;
   let done = 0;
   items.forEach(item => {
@@ -683,6 +689,7 @@ function initFirebase() {
     if (!firebase.apps.length) firebase.initializeApp(cfg);
     _db = firebase.firestore();
     _dot('#9CA3AF', '接続中...');
+    _preFirebaseItems = getItems(); // onSnapshot前のローカルデータを保存（担当者情報を保護）
     setTimeout(migrateAssignees, 2000); // 接続後に担当者データを移行
 
     _db.collection('inventory').onSnapshot(snapshot => {
