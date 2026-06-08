@@ -708,8 +708,8 @@ function initFirebase() {
       const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
       if (localOnly.length > 0) _push(mergedArr);
 
-      // 手動同期中でなければ画面を更新
-      if (!_syncBusy) renderPage(currentPage);
+      // 手動同期中、または登録フォーム表示中（入力内容を消さないため）は再描画しない
+      if (!_syncBusy && currentPage !== 'add') renderPage(currentPage);
 
     }, e => {
       console.error('Firestore error:', e);
