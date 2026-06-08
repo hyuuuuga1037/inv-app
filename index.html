@@ -1454,7 +1454,7 @@ function syncShootRequest(item, enabled) {
     ref.set({
       id: item.id,
       mgmt: item.no || '',
-      name: item.brand || '',
+      name: item.details || '',
       brand: item.brand || '',
       size: item.size || '',
       cat: SHOOT_GENRE_MAP[item.genre] || '',
