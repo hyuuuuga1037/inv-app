@@ -587,6 +587,36 @@ function saveItems(items) {
 // ── Firebase Sync ──
 let _db = null;
 let _fsIds = new Set();
+let _workRecords = [];   // 外注費集計用（gaityuu-appのwork_recordsを参照）
+let _rates = null;       // 外注単価・場所代設定（gaityuu-appのsettings/ratesを参照）
+let _shippingCosts = {}; // 郵送料（月別、手動入力）
+
+// 指定月（YYYY-MM）の外注費合計を算出（作業単価の合計＋場所代固定報酬）
+function calcOutsourceCost(prefix) {
+  let total = 0;
+  (_workRecords || []).forEach(r => {
+    if (r.date && r.date.startsWith(prefix)) total += (r.unitPrice || 0);
+  });
+  if (_rates) {
+    Object.keys(_rates).forEach(person => {
+      const ur = _rates[person];
+      if (ur && ur.spaceEnabled) total += (ur.spaceAmount || 0);
+    });
+  }
+  return total;
+}
+
+function getShippingCost(prefix) {
+  return (_shippingCosts && _shippingCosts[prefix]) || 0;
+}
+
+function saveShippingCost(prefix, value) {
+  if (!_db) return;
+  const v = parseInt(value) || 0;
+  _db.collection('settings').doc('shipping_costs').set({ [prefix]: v }, { merge: true })
+    .then(() => toast('💾 郵送料を保存しました'))
+    .catch(e => console.error('郵送料保存エラー:', e));
+}
 let _syncBusy = false; // 手動同期中フラグ（onSnapshotの再描画を抑制）
 
 function _dot(color, msg) {
@@ -715,6 +745,21 @@ function initFirebase() {
       console.error('Firestore error:', e);
       _dot('#EF4444', 'エラー: ' + e.message);
     });
+
+    // 外注費の集計用（gaityuu-appと共有のコレクション・設定を読み取り専用で監視）
+    _db.collection('work_records').onSnapshot(snap => {
+      _workRecords = snap.docs.map(d => d.data());
+      if (currentPage === 'dashboard') renderCurrentMonthSummary(getItems());
+    }, () => {});
+    _db.collection('settings').doc('rates').onSnapshot(snap => {
+      _rates = snap.exists ? snap.data() : null;
+      if (currentPage === 'dashboard') renderCurrentMonthSummary(getItems());
+    }, () => {});
+    // 郵送料（手動入力・月別保存）
+    _db.collection('settings').doc('shipping_costs').onSnapshot(snap => {
+      _shippingCosts = snap.exists ? snap.data() : {};
+      if (currentPage === 'dashboard') renderCurrentMonthSummary(getItems());
+    }, () => {});
   } catch(e) {
     console.error('Firebase init error:', e);
     _dot('#EF4444', '初期化エラー');
@@ -892,6 +937,11 @@ function renderCurrentMonthSummary(items) {
   const sales  = sold.reduce((s,i) => s+(i.salePrice||0), 0);
   const profit = sold.reduce((s,i) => s+(calcItem(i).profit||0), 0);
   const rate   = sales ? (profit/sales*100).toFixed(1) : '-';
+
+  const outsourceCost = calcOutsourceCost(prefix);
+  const shippingCost  = getShippingCost(prefix);
+  const monthlyProfit = profit - outsourceCost - shippingCost;
+
   area.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div style="font-size:14px;font-weight:700;color:var(--gray-700)">${label} 実績</div>
@@ -914,7 +964,36 @@ function renderCurrentMonthSummary(items) {
         </div>
       </div>
     </div>
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--gray-200);display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:16px">
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:11px;color:var(--gray-400)">外注費（${label}）</div>
+          <div style="font-size:16px;font-weight:700;color:var(--danger)">－¥${fmt(outsourceCost)}</div>
+          <div style="font-size:10px;color:var(--gray-400)">作業単価＋場所代の合計</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--gray-400)">郵送料（${label}）</div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="font-size:14px;color:var(--gray-500)">¥</span>
+            <input type="number" id="dash-shipping-cost" value="${shippingCost || ''}" placeholder="0" min="0" step="100"
+              style="width:90px;padding:4px 6px;border:1px solid var(--gray-300);border-radius:6px;font-size:14px;font-family:inherit">
+            <button class="btn btn-outline-primary btn-sm" onclick="submitShippingCost('${prefix}')">保存</button>
+          </div>
+          <div style="font-size:10px;color:var(--gray-400)">相川さんへの郵送料など（手動入力）</div>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:var(--gray-400)">月利（利益－外注費－郵送料）</div>
+        <div style="font-size:26px;font-weight:800;color:${monthlyProfit>=0?'var(--success)':'var(--danger)'}">¥${fmt(monthlyProfit)}</div>
+      </div>
+    </div>
   `;
+}
+
+function submitShippingCost(prefix) {
+  const el = document.getElementById('dash-shipping-cost');
+  if (!el) return;
+  saveShippingCost(prefix, el.value);
 }
 
 function switchSummaryYear(year) {
