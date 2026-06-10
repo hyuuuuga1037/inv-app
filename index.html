@@ -449,9 +449,9 @@
   <select id="sel-assignee-select" onchange="bulkAssignAssignee(this.value)"
     style="padding:5px 10px;border-radius:7px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:#fff;color:#374151">
     <option value="">👤 担当者を変更</option>
-    <option value="">自分（手元）</option>
-    <option value="A">奥村さん</option>
-    <option value="B">相川さん</option>
+    <option value="__self__">自分（手元）</option>
+    <option value="奥村">奥村さん</option>
+    <option value="相川">相川さん</option>
   </select>
   <button class="btn btn-outline btn-sm" style="color:white;border-color:rgba(255,255,255,0.3)" onclick="clearSelection()">✕ 解除</button>
 </div>
@@ -1530,18 +1530,32 @@ function syncShootRequest(item, enabled) {
   const draftId = String(item.id);
   const ref = _db.collection('drafts').doc(draftId);
   if (enabled) {
-    ref.set({
-      id: item.id,
-      mgmt: item.no || '',
-      name: item.details || '',
-      brand: item.brand || '',
-      size: item.size || '',
-      cat: SHOOT_GENRE_MAP[item.genre] || '',
-      assignee: item.assignee || '',
-      measures: {},
-      savedAt: new Date().toISOString(),
-      fromRequest: true
-    }).catch(e => console.error('採寸依頼の下書き作成エラー:', e));
+    ref.get().then(snap => {
+      if (snap.exists) {
+        // 既に下書きがある場合（外注さんが入力済みの可能性）は採寸データを消さないよう、商品情報だけ更新
+        ref.set({
+          id: item.id,
+          mgmt: item.no || '',
+          brand: item.brand || '',
+          size: item.size || '',
+          assignee: item.assignee || '',
+          fromRequest: true
+        }, { merge: true }).catch(e => console.error('採寸依頼の下書き更新エラー:', e));
+      } else {
+        ref.set({
+          id: item.id,
+          mgmt: item.no || '',
+          name: item.details || '',
+          brand: item.brand || '',
+          size: item.size || '',
+          cat: SHOOT_GENRE_MAP[item.genre] || '',
+          assignee: item.assignee || '',
+          measures: {},
+          savedAt: new Date().toISOString(),
+          fromRequest: true
+        }).catch(e => console.error('採寸依頼の下書き作成エラー:', e));
+      }
+    }).catch(e => console.error('採寸依頼の下書き確認エラー:', e));
   }
   // 依頼解除時は下書きを残す（外注さんが既に入力済みの可能性があるため自動削除しない）
 }
@@ -1549,18 +1563,19 @@ function syncShootRequest(item, enabled) {
 function bulkAssignAssignee(value) {
   const sel = document.getElementById('sel-assignee-select');
   if (sel) setTimeout(() => { sel.value = ''; }, 300);
-  if (selectedItems.size === 0) return;
-  const label = value === '奥村' ? '奥村さん' : value === '相川' ? '相川さん' : '自分（手元）';
+  if (!value || selectedItems.size === 0) return;
+  const assigneeValue = value === '__self__' ? '' : value;
+  const label = assigneeValue === '奥村' ? '奥村さん' : assigneeValue === '相川' ? '相川さん' : '自分（手元）';
   if (!confirm(`選択した ${selectedItems.size} 件の担当者を「${label}」に変更しますか？`)) return;
   const now = Date.now();
   const items = getItems();
   items.forEach((item, idx) => {
-    if (selectedItems.has(item.id)) items[idx] = { ...item, assignee: value, _updatedAt: now };
+    if (selectedItems.has(item.id)) items[idx] = { ...item, assignee: assigneeValue, _updatedAt: now };
   });
   localStorage.setItem(DB_KEY, JSON.stringify(items));
   // 専用コレクションに書き込み
   items.filter(item => selectedItems.has(item.id)).forEach(item => {
-    syncAssignee(item.id, value);
+    syncAssignee(item.id, assigneeValue);
   });
   toast(`👤 ${selectedItems.size}件の担当者を「${label}」に変更しました`);
   clearSelection();
