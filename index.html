@@ -1537,6 +1537,7 @@ function syncShootRequest(item, enabled) {
       brand: item.brand || '',
       size: item.size || '',
       cat: SHOOT_GENRE_MAP[item.genre] || '',
+      assignee: item.assignee || '',
       measures: {},
       savedAt: new Date().toISOString(),
       fromRequest: true
