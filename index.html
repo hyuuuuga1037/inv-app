@@ -606,14 +606,20 @@ function calcOutsourceCost(prefix) {
   return total;
 }
 
-function getShippingCost(prefix) {
-  return (_shippingCosts && _shippingCosts[prefix]) || 0;
+function getShippingEntries(prefix) {
+  const v = _shippingCosts && _shippingCosts[prefix];
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'number' && v > 0) return [{ date: '', amount: v }]; // 旧形式（合計のみ）からの移行用
+  return [];
 }
 
-function saveShippingCost(prefix, value) {
+function getShippingCost(prefix) {
+  return getShippingEntries(prefix).reduce((s, e) => s + (e.amount || 0), 0);
+}
+
+function saveShippingEntries(prefix, entries) {
   if (!_db) return;
-  const v = parseInt(value) || 0;
-  _db.collection('settings').doc('shipping_costs').set({ [prefix]: v }, { merge: true })
+  _db.collection('settings').doc('shipping_costs').set({ [prefix]: entries }, { merge: true })
     .then(() => toast('💾 郵送料を保存しました'))
     .catch(e => console.error('郵送料保存エラー:', e));
 }
@@ -939,8 +945,10 @@ function renderCurrentMonthSummary(items) {
   const rate   = sales ? (profit/sales*100).toFixed(1) : '-';
 
   const outsourceCost = calcOutsourceCost(prefix);
+  const shippingEntries = getShippingEntries(prefix);
   const shippingCost  = getShippingCost(prefix);
   const monthlyProfit = profit - outsourceCost - shippingCost;
+  const todayStr = new Date().toISOString().slice(0,10);
 
   area.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -972,14 +980,29 @@ function renderCurrentMonthSummary(items) {
           <div style="font-size:10px;color:var(--gray-400)">作業単価＋場所代の合計</div>
         </div>
         <div>
-          <div style="font-size:11px;color:var(--gray-400)">郵送料（${label}）</div>
-          <div style="display:flex;align-items:center;gap:4px">
-            <span style="font-size:14px;color:var(--gray-500)">¥</span>
-            <input type="number" id="dash-shipping-cost" value="${shippingCost || ''}" placeholder="0" min="0" step="100"
-              style="width:90px;padding:4px 6px;border:1px solid var(--gray-300);border-radius:6px;font-size:14px;font-family:inherit">
-            <button class="btn btn-outline-primary btn-sm" onclick="submitShippingCost('${prefix}')">保存</button>
+          <div style="font-size:11px;color:var(--gray-400)">郵送料合計（${label}）</div>
+          <div style="font-size:16px;font-weight:700;color:var(--danger)">－¥${fmt(shippingCost)}</div>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:4px">
+            <input type="date" id="dash-shipping-date" value="${todayStr}"
+              style="padding:4px 6px;border:1px solid var(--gray-300);border-radius:6px;font-size:13px;font-family:inherit">
+            <span style="font-size:14px;color:var(--gray-500)">＋¥</span>
+            <input type="number" id="dash-shipping-add" placeholder="今回の発送分" min="0" step="100"
+              style="width:100px;padding:4px 6px;border:1px solid var(--gray-300);border-radius:6px;font-size:14px;font-family:inherit">
+            <button class="btn btn-outline-primary btn-sm" onclick="addShippingCost('${prefix}')">追加</button>
           </div>
-          <div style="font-size:10px;color:var(--gray-400)">相川さんへの郵送料など（手動入力）</div>
+          <div style="font-size:10px;color:var(--gray-400)">相川さんへの郵送料など。発送のたびに日付と金額を追加</div>
+          ${shippingEntries.length ? `
+          <details style="margin-top:6px">
+            <summary style="cursor:pointer;font-size:12px;color:var(--primary)">明細を見る（${shippingEntries.length}件）</summary>
+            <div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--gray-200)">
+              ${shippingEntries.map((e,i) => `
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--gray-500);padding:2px 0">
+                  <span>${e.date || '(日付なし)'}</span>
+                  <span>¥${fmt(e.amount||0)}</span>
+                  <button class="btn btn-outline btn-sm" style="padding:1px 6px" title="削除" onclick="deleteShippingEntry('${prefix}',${i})">✕</button>
+                </div>`).join('')}
+            </div>
+          </details>` : ''}
         </div>
       </div>
       <div style="text-align:right">
@@ -990,10 +1013,23 @@ function renderCurrentMonthSummary(items) {
   `;
 }
 
-function submitShippingCost(prefix) {
-  const el = document.getElementById('dash-shipping-cost');
-  if (!el) return;
-  saveShippingCost(prefix, el.value);
+function addShippingCost(prefix) {
+  const dateEl = document.getElementById('dash-shipping-date');
+  const amountEl = document.getElementById('dash-shipping-add');
+  if (!amountEl) return;
+  const amount = parseInt(amountEl.value) || 0;
+  if (!amount) return;
+  const date = (dateEl && dateEl.value) || '';
+  const entries = getShippingEntries(prefix);
+  entries.push({ date, amount });
+  saveShippingEntries(prefix, entries);
+  amountEl.value = '';
+}
+
+function deleteShippingEntry(prefix, index) {
+  const entries = getShippingEntries(prefix);
+  entries.splice(index, 1);
+  saveShippingEntries(prefix, entries);
 }
 
 function switchSummaryYear(year) {
