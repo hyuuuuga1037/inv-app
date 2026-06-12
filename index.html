@@ -574,14 +574,17 @@ function saveItems(items) {
   const prev = getItems();
   const prevMap = new Map(prev.map(i => [String(i.id), i]));
   const now = Date.now();
+  const changedItems = [];
   const stamped = items.map(item => {
     const old = prevMap.get(String(item.id));
     const changed = !old ||
       JSON.stringify({...old, _updatedAt: 0}) !== JSON.stringify({...item, _updatedAt: 0});
-    return {...item, _updatedAt: changed ? now : (item._updatedAt || now)};
+    const out = {...item, _updatedAt: changed ? now : (item._updatedAt || now)};
+    if (changed) changedItems.push(out);
+    return out;
   });
   localStorage.setItem(DB_KEY, JSON.stringify(stamped));
-  _push(stamped); // Firestoreに非同期送信
+  _push(stamped, changedItems); // 変更分のみFirestoreに非同期送信（書き込み回数の節約）
 }
 
 // ── Firebase Sync ──
@@ -657,13 +660,15 @@ function _merge(localItems, fsItems) {
   return [...merged.values()];
 }
 
-function _push(items) {
+function _push(items, changedItems) {
   // localStorage保存後にFirestoreへ非同期送信（失敗しても表示には影響しない）
+  // changedItems指定時は変更分のみ書き込む（無料枠の書き込み回数を節約）。削除判定は全件リストで行う。
   if (!_db) return;
   const col = _db.collection('inventory');
   const newIds = new Set(items.map(i => String(i.id)));
   _fsIds.forEach(id => { if (!newIds.has(id)) col.doc(id).delete().catch(() => {}); });
-  items.forEach(item => {
+  const toWrite = changedItems || items;
+  toWrite.forEach(item => {
     col.doc(String(item.id)).set(_clean(item)).catch(e => {
       console.error('Firestore write error:', e);
       _dot('#EF4444', '書込エラー: ' + e.message);
@@ -742,7 +747,7 @@ function initFirebase() {
       // ローカルにしかないアイテムをFirestoreに送信
       const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
       const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
-      if (localOnly.length > 0) _push(mergedArr);
+      if (localOnly.length > 0) _push(mergedArr, localOnly); // ローカルにしかない分だけ送信
 
       // 手動同期中、または登録フォーム表示中（入力内容を消さないため）は再描画しない
       if (!_syncBusy && currentPage !== 'add') renderPage(currentPage);
