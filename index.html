@@ -706,25 +706,32 @@ function _flushPending() {
   const ops = [];
   p.writes.forEach(id => {
     const item = itemsMap.get(id);
-    if (!item) { ops.push(Promise.resolve({ id, kind: 'w', ok: true })); return; } // ローカルに無い→送信不要
-    ops.push(col.doc(id).set(_clean(item)).then(() => ({ id, kind: 'w', ok: true })).catch(() => ({ id, kind: 'w', ok: false })));
+    if (!item) { ops.push(Promise.resolve({ id, kind: 'w', ok: true, gone: true })); return; } // ローカルに無い→送信不要
+    const sentTs = item._updatedAt || 0; // 送信時点のバージョン
+    ops.push(col.doc(id).set(_clean(item)).then(() => ({ id, kind: 'w', ok: true, sentTs })).catch(() => ({ id, kind: 'w', ok: false })));
   });
   p.deletes.forEach(id => {
     ops.push(col.doc(id).delete().then(() => ({ id, kind: 'd', ok: true })).catch(() => ({ id, kind: 'd', ok: false })));
   });
   Promise.all(ops).then(results => {
     const np = _getPending();
+    const curMap = new Map(getItems().map(i => [String(i.id), i])); // 送信完了後の最新ローカル
     results.forEach(r => {
       if (!r.ok) return;
-      if (r.kind === 'w') np.writes = np.writes.filter(x => x !== r.id);
-      else np.deletes = np.deletes.filter(x => x !== r.id);
+      if (r.kind === 'd') { np.deletes = np.deletes.filter(x => x !== r.id); return; }
+      // 書込：送信後にさらに新しい編集が入っていたらキューに残し、再送する
+      if (r.gone) { np.writes = np.writes.filter(x => x !== r.id); return; }
+      const cur = curMap.get(r.id);
+      const curTs = cur ? (cur._updatedAt || 0) : -1;
+      if (curTs === r.sentTs) np.writes = np.writes.filter(x => x !== r.id); // 送った内容が最新なら完了
+      // curTs が新しい場合はキューに残す → 次回フラッシュで最新を送る
     });
     _setPending(np);
     _flushing = false;
     const remaining = np.writes.length + np.deletes.length;
     if (remaining) {
       _dot('#F59E0B', '未送信' + remaining + '件（自動で再送します）');
-      setTimeout(_flushPending, 8000); // 失敗分はしばらく待って自動再送
+      setTimeout(_flushPending, 8000); // 失敗分・新編集分はしばらく待って自動再送
     } else {
       _dot('#10B981', '同期済み ' + new Date().toLocaleTimeString('ja-JP'));
     }
@@ -795,14 +802,14 @@ function initFirebase() {
       // マージしてlocalStorageを更新
       const mergedArr = _merge(localItems, fsItems);
       localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
-      _dot('#10B981', '最終同期: ' + new Date().toLocaleTimeString('ja-JP'));
 
       // ローカルにしかないアイテムを送信待ちに登録（昨晩の1325以降のような未送信分を救済）
       const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
       const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
       if (localOnly.length > 0) _push(mergedArr, localOnly);
 
-      // 再接続のたびに送信待ちキューを流す（失敗していた分を自動で送り直す）
+      // 再接続のたびに送信待ちキューを流す（失敗していた分を自動で送り直す）。
+      // ドット表示は_flushPendingが「未送信あり=オレンジ / 完了=緑」を正しく出すので、ここでは緑に固定しない。
       _flushPending();
 
       // 手動同期中、または登録フォーム表示中（入力内容を消さないため）は再描画しない
@@ -1598,7 +1605,7 @@ function setListed(itemId) {
   if (idx<0) return;
   items[idx] = { ...items[idx], status: 'listed' };
   saveItems(items);
-  renderInventory(document.getElementById('content'));
+  renderInventoryTable(); // テーブルのみ再描画（スクロール位置を保持）
 }
 
 function changeAssignee(itemId, value) {
@@ -1692,7 +1699,7 @@ function toggleListedStatus(itemId) {
   if (current === 'sold') return;
   items[idx] = { ...items[idx], status: current === 'unlisted' ? 'listed' : 'unlisted' };
   saveItems(items);
-  renderInventory(document.getElementById('content'));
+  renderInventoryTable(); // ページ全体ではなくテーブルのみ再描画（スクロール位置を保持）
 }
 
 function submitAdd() {
@@ -2841,22 +2848,42 @@ function executeImport() {
 }
 
 async function forceSyncNow() {
-  // このデバイスの全データをFirestoreに強制送信（進捗はtoastで表示）
+  // クラウドにまだ無い「未送信分だけ」を送る（全件送信は無料枠を浪費するため廃止）。
   if (!_db) { toast('❌ Firebase未接続。再読み込みしてください。', 4000); return; }
   _syncBusy = true;
   try {
     await _db.enableNetwork();
-    const now = Date.now();
-    const allItems = getItems().map(i => ({..._clean(i), _updatedAt: now}));
     const col = _db.collection('inventory');
-    const CHUNK = 20;
-    for (let i = 0; i < allItems.length; i += CHUNK) {
-      await Promise.all(allItems.slice(i, i+CHUNK).map(item => col.doc(String(item.id)).set(item)));
-      toast(`☁️ 送信中... ${Math.min(i+CHUNK, allItems.length)}/${allItems.length}件`, 0);
+    // 最新のクラウド状態を取得し、ローカルにしか無いものを特定
+    const snap = await col.get({ source: 'server' });
+    const cloudIds = new Set(snap.docs.map(d => d.id));
+    const unsynced = getItems().filter(i => !cloudIds.has(String(i.id)));
+    if (!unsynced.length) {
+      toast('✅ 未送信のデータはありません（すべて同期済み）', 4000);
+      _dot('#10B981', '同期済み ' + new Date().toLocaleTimeString('ja-JP'));
+      return;
     }
-    toast(`✅ 送信完了（${allItems.length}件）`, 4000);
+    let sent = 0;
+    const CHUNK = 20;
+    for (let i = 0; i < unsynced.length; i += CHUNK) {
+      await Promise.all(unsynced.slice(i, i+CHUNK).map(item => col.doc(String(item.id)).set(_clean(item))));
+      sent = Math.min(i+CHUNK, unsynced.length);
+      toast(`☁️ 送信中... ${sent}/${unsynced.length}件`, 0);
+    }
+    // 送信済み分は送信待ちキューからも除外
+    const p = _getPending();
+    const sentIds = new Set(unsynced.map(i => String(i.id)));
+    p.writes = p.writes.filter(id => !sentIds.has(id));
+    _setPending(p);
+    toast(`✅ 未送信 ${unsynced.length}件をクラウドへ送信しました`, 5000);
+    _dot('#10B981', '同期済み ' + new Date().toLocaleTimeString('ja-JP'));
   } catch(e) {
-    toast('❌ 送信エラー: ' + e.message, 5000);
+    const msg = (e && e.message) || '';
+    if (/quota|exhaust|resource/i.test(msg)) {
+      toast('⚠️ クラウドの本日の無料上限に達しています。明日リセット後に自動で送られます（データは消えません）', 8000);
+    } else {
+      toast('❌ 送信エラー: ' + msg, 6000);
+    }
     console.error('forceSyncNow error:', e);
   } finally {
     _syncBusy = false;
