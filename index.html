@@ -660,22 +660,75 @@ function _merge(localItems, fsItems) {
   return [...merged.values()];
 }
 
+// ── 未送信キュー（送信失敗しても消えない／自動で再送し続ける）──
+const PENDING_KEY = 'apparel_pending';
+function _getPending() {
+  try { const p = JSON.parse(localStorage.getItem(PENDING_KEY)); return p && p.writes ? p : { writes: [], deletes: [] }; }
+  catch (e) { return { writes: [], deletes: [] }; }
+}
+function _setPending(p) { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); }
+
 function _push(items, changedItems) {
-  // localStorage保存後にFirestoreへ非同期送信（失敗しても表示には影響しない）
-  // changedItems指定時は変更分のみ書き込む（無料枠の書き込み回数を節約）。削除判定は全件リストで行う。
+  // 変更分・削除分を「送信待ち」としてlocalStorageに記録してから送信を試みる。
+  // 送信が失敗してもキューに残り続け、_flushPendingが自動で再送するためデータは消えない。
   if (!_db) return;
-  const col = _db.collection('inventory');
   const newIds = new Set(items.map(i => String(i.id)));
-  _fsIds.forEach(id => { if (!newIds.has(id)) col.doc(id).delete().catch(() => {}); });
+  const p = _getPending();
+  // 削除待ち：以前Firestoreにあったが今のリストに無いID
+  _fsIds.forEach(id => {
+    if (!newIds.has(id)) {
+      if (!p.deletes.includes(id)) p.deletes.push(id);
+      p.writes = p.writes.filter(x => x !== id); // 削除が書込より優先
+    }
+  });
+  // 書込待ち：変更があったアイテム
   const toWrite = changedItems || items;
   toWrite.forEach(item => {
-    col.doc(String(item.id)).set(_clean(item)).catch(e => {
-      console.error('Firestore write error:', e);
-      _dot('#EF4444', '書込エラー: ' + e.message);
-    });
+    const id = String(item.id);
+    if (!p.deletes.includes(id) && !p.writes.includes(id)) p.writes.push(id);
   });
+  _setPending(p);
   _fsIds = newIds;
-  _dot('#10B981', '同期済み ' + new Date().toLocaleTimeString('ja-JP'));
+  _flushPending();
+}
+
+let _flushing = false;
+function _flushPending() {
+  // 送信待ちキューを処理。成功した分だけキューから外し、失敗分は残して次回再送する。
+  if (!_db || _flushing) return;
+  const p = _getPending();
+  const total = p.writes.length + p.deletes.length;
+  if (!total) { _dot('#10B981', '同期済み ' + new Date().toLocaleTimeString('ja-JP')); return; }
+  _flushing = true;
+  _dot('#F59E0B', '送信中... 未送信' + total + '件');
+  const col = _db.collection('inventory');
+  const itemsMap = new Map(getItems().map(i => [String(i.id), i]));
+  const ops = [];
+  p.writes.forEach(id => {
+    const item = itemsMap.get(id);
+    if (!item) { ops.push(Promise.resolve({ id, kind: 'w', ok: true })); return; } // ローカルに無い→送信不要
+    ops.push(col.doc(id).set(_clean(item)).then(() => ({ id, kind: 'w', ok: true })).catch(() => ({ id, kind: 'w', ok: false })));
+  });
+  p.deletes.forEach(id => {
+    ops.push(col.doc(id).delete().then(() => ({ id, kind: 'd', ok: true })).catch(() => ({ id, kind: 'd', ok: false })));
+  });
+  Promise.all(ops).then(results => {
+    const np = _getPending();
+    results.forEach(r => {
+      if (!r.ok) return;
+      if (r.kind === 'w') np.writes = np.writes.filter(x => x !== r.id);
+      else np.deletes = np.deletes.filter(x => x !== r.id);
+    });
+    _setPending(np);
+    _flushing = false;
+    const remaining = np.writes.length + np.deletes.length;
+    if (remaining) {
+      _dot('#F59E0B', '未送信' + remaining + '件（自動で再送します）');
+      setTimeout(_flushPending, 8000); // 失敗分はしばらく待って自動再送
+    } else {
+      _dot('#10B981', '同期済み ' + new Date().toLocaleTimeString('ja-JP'));
+    }
+  }).catch(() => { _flushing = false; setTimeout(_flushPending, 8000); });
 }
 
 // 担当者データを専用コレクションに書き込む（在庫同期の競合を回避）
@@ -744,10 +797,13 @@ function initFirebase() {
       localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
       _dot('#10B981', '最終同期: ' + new Date().toLocaleTimeString('ja-JP'));
 
-      // ローカルにしかないアイテムをFirestoreに送信
+      // ローカルにしかないアイテムを送信待ちに登録（昨晩の1325以降のような未送信分を救済）
       const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
       const localOnly = localItems.filter(i => !fsMap.has(String(i.id)));
-      if (localOnly.length > 0) _push(mergedArr, localOnly); // ローカルにしかない分だけ送信
+      if (localOnly.length > 0) _push(mergedArr, localOnly);
+
+      // 再接続のたびに送信待ちキューを流す（失敗していた分を自動で送り直す）
+      _flushPending();
 
       // 手動同期中、または登録フォーム表示中（入力内容を消さないため）は再描画しない
       if (!_syncBusy && currentPage !== 'add') renderPage(currentPage);
@@ -771,6 +827,11 @@ function initFirebase() {
       _shippingCosts = snap.exists ? snap.data() : {};
       if (currentPage === 'dashboard') renderCurrentMonthSummary(getItems());
     }, () => {});
+
+    // 送信待ちキューを定期的に自動再送（一時的な通信不良でも放置で必ず送られる）
+    setTimeout(_flushPending, 3000);
+    setInterval(_flushPending, 20000);
+    window.addEventListener('online', _flushPending);
   } catch(e) {
     console.error('Firebase init error:', e);
     _dot('#EF4444', '初期化エラー');
