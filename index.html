@@ -593,6 +593,7 @@ let _fsIds = new Set();
 let _workRecords = [];   // 外注費集計用（gaityuu-appのwork_recordsを参照）
 let _rates = null;       // 外注単価・場所代設定（gaityuu-appのsettings/ratesを参照）
 let _shippingCosts = {}; // 郵送料（月別、手動入力）
+let _extraCharges = [];  // 特別費用（研修費など、gaityuu-appのextra_chargesを参照）
 
 // 指定月（YYYY-MM）の外注費合計を算出（作業単価の合計＋場所代固定報酬）
 function calcOutsourceCost(prefix) {
@@ -606,6 +607,10 @@ function calcOutsourceCost(prefix) {
       if (ur && ur.spaceEnabled) total += (ur.spaceAmount || 0);
     });
   }
+  // 特別費用（研修費など・該当月分）
+  (_extraCharges || []).forEach(c => {
+    if (c.month === prefix) total += (c.amount || 0);
+  });
   return total;
 }
 
@@ -834,6 +839,11 @@ function initFirebase() {
       _shippingCosts = snap.exists ? snap.data() : {};
       if (currentPage === 'dashboard') renderCurrentMonthSummary(getItems());
     }, () => {});
+    // 特別費用（研修費など・gaityuu-appのextra_chargesを読み取り）
+    _db.collection('extra_charges').onSnapshot(snap => {
+      _extraCharges = snap.docs.map(d => d.data());
+      if (currentPage === 'dashboard') renderCurrentMonthSummary(getItems());
+    }, () => {});
 
     // 送信待ちキューを定期的に自動再送（一時的な通信不良でも放置で必ず送られる）
     setTimeout(_flushPending, 3000);
@@ -1050,7 +1060,7 @@ function renderCurrentMonthSummary(items) {
         <div>
           <div style="font-size:11px;color:var(--gray-400)">外注費（${label}）</div>
           <div style="font-size:16px;font-weight:700;color:var(--danger)">－¥${fmt(outsourceCost)}</div>
-          <div style="font-size:10px;color:var(--gray-400)">作業単価＋場所代の合計</div>
+          <div style="font-size:10px;color:var(--gray-400)">作業単価＋場所代＋特別費用の合計</div>
         </div>
         <div>
           <div style="font-size:11px;color:var(--gray-400)">郵送料合計（${label}）</div>
