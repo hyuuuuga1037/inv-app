@@ -131,6 +131,24 @@
   .btn-sm { padding: 5px 10px; font-size: 12px; }
   .btn-icon { padding: 8px; }
 
+  /* 在庫一覧：PCは表、スマホはカード（画面幅で自動切替） */
+  .inv-cards { display: none; }
+  .inv-card {
+    border: 1px solid var(--gray-200); border-radius: 12px; padding: 12px;
+    margin-bottom: 10px; background: #fff;
+  }
+  .inv-card-top { display: flex; align-items: flex-start; gap: 8px; }
+  .inv-card-no { font-size: 17px; font-weight: 800; color: var(--primary); }
+  .inv-card-row { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 6px; }
+  .inv-card-row .lbl { color: var(--gray-400); font-size: 11px; }
+  .inv-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .inv-card-actions .btn { flex: 1 1 auto; }
+  @media (max-width: 768px) {
+    .inv-table { display: none; }
+    .inv-cards { display: block; }
+    .table-scroll { max-height: none; overflow-x: visible; }
+  }
+
   /* Table */
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -1426,6 +1444,62 @@ function renderInventory(el) {
   renderInventoryTable();
 }
 
+// スマホ用カード1枚分のHTML（表と同じデータ・操作を縦並びで表示）
+function invCardHTML(item) {
+  const c = calcItem(item);
+  const st = item.status || 'unlisted';
+  const stLabel = {unlisted:'未出品', listed:'出品中', sold:'売却済み'}[st];
+  const stClass = {unlisted:'badge-unlisted', listed:'badge-listed', sold:'badge-sold'}[st];
+  const isChecked = selectedItems.has(item.id);
+  const bundleBadge = item.bundleId
+    ? `<span class="badge badge-bundle" title="まとめ売りID:${item.bundleId}" onclick="showBundleGroup('${item.bundleId}')">まとめ</span> ` : '';
+  const money = (lbl, v, cls) => `<div><div class="lbl">${lbl}</div><div ${cls?`class="${cls}"`:''}>${v}</div></div>`;
+  return `
+  <div class="inv-card"${isChecked?' style="background:var(--primary-light)"':''}>
+    <div class="inv-card-top">
+      ${st!=='sold'?`<input type="checkbox" class="row-check" ${isChecked?'checked':''} onchange="toggleItemSelect(${item.id})" style="margin-top:4px">`:''}
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="inv-card-no">No.${item.no||'-'}</span>
+          ${bundleBadge}<span class="badge ${stClass}" ${st!=='sold'?`onclick="toggleListedStatus(${item.id})" style="cursor:pointer"`:``}>${stLabel}</span>
+        </div>
+        <div style="font-weight:700;font-size:15px;margin-top:4px">${item.brand||'-'}</div>
+        <div style="font-size:13px;color:var(--gray-600)">${item.details||''}</div>
+        <div style="font-size:12px;color:var(--gray-500);margin-top:2px">${item.genre||''}${item.size?'　サイズ：'+item.size:''}</div>
+      </div>
+    </div>
+    <div class="inv-card-row">
+      ${money('仕入値', '¥'+fmt(item.purchasePrice||0))}
+      ${money('仕入日', item.purchaseDate||'-')}
+      ${money('仕入れ先', item.purchaseSource||'-')}
+    </div>
+    ${st==='sold'?`<div class="inv-card-row">
+      ${money('販売先', item.platform||'-')}
+      ${money('販売額', item.salePrice?'¥'+fmt(item.salePrice):'-')}
+      ${money('利益', c.profit!=null?'¥'+fmt(c.profit):'-', c.profit!=null?(c.profit>=0?'profit-pos':'profit-neg'):'')}
+    </div>`:''}
+    <div class="inv-card-row" style="align-items:center">
+      <div style="display:flex;align-items:center;gap:4px">
+        <span class="lbl">担当</span>
+        <select onchange="changeAssignee(${item.id},this.value)" style="padding:4px 6px;border-radius:6px;font-size:12px;border:1px solid var(--gray-200);background:white;font-family:inherit">
+          <option value="" ${!item.assignee?'selected':''}>自分</option>
+          <option value="奥村" ${(item.assignee==='奥村'||item.assignee==='A')?'selected':''}>奥村さん</option>
+          <option value="相川" ${(item.assignee==='相川'||item.assignee==='B')?'selected':''}>相川さん</option>
+        </select>
+      </div>
+      <button onclick="toggleShootRequest(${item.id})"
+        style="padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid ${item.shootRequest?'var(--primary)':'var(--gray-200)'};background:${item.shootRequest?'var(--primary)':'white'};color:${item.shootRequest?'white':'var(--gray-500)'}">📷 ${item.shootRequest?'依頼中':'依頼する'}</button>
+    </div>
+    <div class="inv-card-actions">
+      ${st!=='sold'?`<button class="btn btn-success btn-sm" onclick="openSellModal(${item.id})">売却</button>`:''}
+      ${st==='unlisted'?`<button class="btn btn-sm" style="background:var(--primary);color:white" onclick="setListed(${item.id})">出品</button>`:''}
+      ${st==='listed'?`<button class="btn btn-sm" style="background:var(--warning);color:white" onclick="openWithdrawModal(${item.id})">取下げ</button>`:''}
+      <button class="btn btn-outline btn-sm" onclick="openEditModal(${item.id})">編集</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="openDeleteModal(${item.id})">削除</button>
+    </div>
+  </div>`;
+}
+
 function renderInventoryTable() {
   const scrollY = window.scrollY;
   let items = getItems();
@@ -1450,7 +1524,9 @@ function renderInventoryTable() {
     return;
   }
 
-  area.innerHTML = `<table style="width:100%;border-collapse:collapse">
+  area.innerHTML = `
+  <div class="inv-cards">${items.map(item => invCardHTML(item)).join('')}</div>
+  <table class="inv-table" style="width:100%;border-collapse:collapse">
     <thead>
       <tr>
         <th style="width:32px"></th>
