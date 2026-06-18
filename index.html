@@ -1698,9 +1698,9 @@ function changeAssignee(itemId, value) {
   const items = getItems();
   const idx = items.findIndex(i => i.id === itemId);
   if (idx < 0) return;
-  items[idx] = { ...items[idx], assignee: value };
-  localStorage.setItem(DB_KEY, JSON.stringify(items));
-  syncAssignee(itemId, value); // 専用コレクションに書き込み
+  items[idx] = { ...items[idx], assignee: value, _updatedAt: Date.now() };
+  saveItems(items); // 在庫本体にも担当者を反映（外注アプリが古い担当を参照しないように）
+  syncAssignee(itemId, value); // 専用コレクションにも書き込み
   const label = value === '奥村' ? '奥村さん' : value === '相川' ? '相川さん' : '自分（手元）';
   toast(`👤 担当者を「${label}」に変更しました`);
 }
@@ -1767,8 +1767,8 @@ function bulkAssignAssignee(value) {
   items.forEach((item, idx) => {
     if (selectedItems.has(item.id)) items[idx] = { ...item, assignee: assigneeValue, _updatedAt: now };
   });
-  localStorage.setItem(DB_KEY, JSON.stringify(items));
-  // 専用コレクションに書き込み
+  saveItems(items); // 在庫本体にも担当者を反映（外注アプリが古い担当を参照しないように）
+  // 専用コレクションにも書き込み
   items.filter(item => selectedItems.has(item.id)).forEach(item => {
     syncAssignee(item.id, assigneeValue);
   });
@@ -2551,6 +2551,7 @@ function submitEdit(itemId) {
     purchaseDate: document.getElementById('e-date').value,
     status,
     assignee: document.getElementById('e-assignee')?.value || '',
+    _updatedAt: Date.now(),
     ...(status==='sold' ? {
       platform: document.getElementById('e-platform')?.value,
       saleDate: document.getElementById('e-saledate')?.value,
@@ -2561,6 +2562,7 @@ function submitEdit(itemId) {
     } : {})
   };
   saveItems(items);
+  syncAssignee(item.id, items[idx].assignee); // 担当者専用データalso同期（外注アプリと整合）
   closeEditModal();
   toast('✅ 変更を保存しました');
   renderPage(currentPage);
