@@ -814,7 +814,10 @@ function initFirebase() {
     _db = firebase.firestore();
     _dot('#9CA3AF', '接続中...');
     _preFirebaseItems = getItems(); // onSnapshot前のローカルデータを保存（担当者情報を保護）
-    setTimeout(migrateAssignees, 2000); // 接続後に担当者データを移行
+    // 担当者データの自動移行は廃止。毎回ローカルの古い担当者を専用データに押し戻し、
+    // 解除した担当者が復活する・振分日が毎回上書きされる不具合の原因だったため。
+    // （担当者の変更は changeAssignee / bulkAssignAssignee / submitEdit が都度syncAssigneeで反映する）
+    // setTimeout(migrateAssignees, 2000);
 
     _db.collection('inventory').onSnapshot(snapshot => {
       // Firestoreからリアルタイム更新を受信
