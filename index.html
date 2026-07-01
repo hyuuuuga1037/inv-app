@@ -612,6 +612,20 @@ let _workRecords = [];   // 外注費集計用（gaityuu-appのwork_recordsを�
 let _rates = null;       // 外注単価・場所代設定（gaityuu-appのsettings/ratesを参照）
 let _shippingCosts = {}; // 郵送料（月別、手動入力）
 let _extraCharges = [];  // 特別費用（研修費など、gaityuu-appのextra_chargesを参照）
+let _targets = {};       // 月別・ジャンル別の利益目標 { 'YYYY-MM': { genre: amount, _total: amount } }
+
+function getTarget(month, key) { return (_targets[month] && _targets[month][key]) || 0; }
+function saveTarget(month, key, value) {
+  if (!_db) return;
+  const v = parseInt(value) || 0;
+  // 該当月のオブジェクトを丸ごとmergeして、他ジャンルを消さない
+  const monthObj = { ...(_targets[month] || {}), [key]: v };
+  _targets = { ..._targets, [month]: monthObj };
+  _db.collection('settings').doc('targets').set({ [month]: { [key]: v } }, { merge: true })
+    .then(() => toast('🎯 目標を保存しました'))
+    .catch(e => console.error('目標保存エラー:', e));
+  renderGenreStats(getItems());
+}
 
 // 指定月（YYYY-MM）の外注費合計を算出（作業単価の合計＋場所代固定報酬）
 function calcOutsourceCost(prefix) {
@@ -865,6 +879,11 @@ function initFirebase() {
       _extraCharges = snap.docs.map(d => d.data());
       if (currentPage === 'dashboard') renderCurrentMonthSummary(getItems());
     }, () => {});
+    // 利益目標（月別・ジャンル別）
+    _db.collection('settings').doc('targets').onSnapshot(snap => {
+      _targets = snap.exists ? snap.data() : {};
+      if (currentPage === 'dashboard') renderGenreStats(getItems());
+    }, () => {});
 
     // 送信待ちキューを定期的に自動再送（一時的な通信不良でも放置で必ず送られる）
     setTimeout(_flushPending, 3000);
@@ -1025,7 +1044,7 @@ function renderDashboard(el) {
       <div id="platform-stats"></div>
     </div>
     <div class="card" style="margin-top:0">
-      <div class="card-title">ジャンル別 売上（当月）</div>
+      <div class="card-title">🎯 ジャンル別 目標・実績（利益）</div>
       <div id="genre-stats"></div>
     </div>
   `;
@@ -1037,12 +1056,36 @@ function renderDashboard(el) {
   renderGenreStats(items);
 }
 
+let _dashMonth = null; // ダッシュボードで表示中の月（YYYY-MM）。null=当月
+function _dashRerender() {
+  const items = getItems();
+  renderCurrentMonthSummary(items);
+  renderPlatformStats(items);
+  renderGenreStats(items);
+}
+function setDashMonth(v) { _dashMonth = v || null; _dashRerender(); }
+function changeDashMonth(delta) {
+  const now = new Date();
+  const cur = _dashMonth || (now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0'));
+  const [y,m] = cur.split('-').map(Number);
+  const d = new Date(y, m-1+delta, 1);
+  _dashMonth = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  _dashRerender();
+}
+function _dashPrefix() {
+  const now = new Date();
+  return _dashMonth || (now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0'));
+}
+
 function renderCurrentMonthSummary(items) {
   const area = document.getElementById('current-month-summary');
   if (!area) return;
   const now = new Date();
-  const prefix = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
-  const label = now.getFullYear() + '年' + (now.getMonth()+1) + '月';
+  const curPrefix = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const prefix = _dashMonth || curPrefix;
+  const [py, pm] = prefix.split('-');
+  const label = py + '年' + parseInt(pm) + '月';
+  const isCurrent = prefix === curPrefix;
   const sold = items.filter(i => i.status==='sold' && i.saleDate && i.saleDate.startsWith(prefix));
   const sales  = sold.reduce((s,i) => s+(i.salePrice||0), 0);
   const profit = sold.reduce((s,i) => s+(calcItem(i).profit||0), 0);
@@ -1052,11 +1095,16 @@ function renderCurrentMonthSummary(items) {
   const shippingEntries = getShippingEntries(prefix);
   const shippingCost  = getShippingCost(prefix);
   const monthlyProfit = profit - outsourceCost - shippingCost;
-  const todayStr = new Date().toISOString().slice(0,10);
+  const todayStr = isCurrent ? new Date().toISOString().slice(0,10) : (prefix + '-01');
 
   area.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <div style="font-size:14px;font-weight:700;color:var(--gray-700)">${label} 実績</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button onclick="changeDashMonth(-1)" title="前の月" style="padding:2px 8px;border-radius:6px;border:1px solid var(--gray-200);background:#fff;cursor:pointer;font-family:inherit">◀</button>
+        <input type="month" value="${prefix}" max="${curPrefix}" onchange="setDashMonth(this.value)" style="padding:3px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:14px;font-family:inherit">
+        <button onclick="changeDashMonth(1)" title="次の月" ${isCurrent?'disabled style="opacity:.4;padding:2px 8px;border-radius:6px;border:1px solid var(--gray-200);background:#fff"':'style="padding:2px 8px;border-radius:6px;border:1px solid var(--gray-200);background:#fff;cursor:pointer;font-family:inherit"'}>▶</button>
+        <span style="font-size:14px;font-weight:700;color:var(--gray-700)">実績${isCurrent?'':'（過去月）'}</span>
+      </div>
       <div style="display:flex;gap:24px;flex-wrap:wrap">
         <div>
           <div style="font-size:11px;color:var(--gray-400)">売上</div>
@@ -1241,38 +1289,55 @@ function svgPieChartWithLabels(slices, size) {
 function renderGenreStats(items) {
   const area = document.getElementById('genre-stats');
   if (!area) return;
-  const now = new Date();
-  const currentMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
-  const monthLabel = now.getFullYear() + '年' + (now.getMonth()+1) + '月';
-  const sold = items.filter(i => i.status === 'sold' && i.saleDate && i.saleDate.startsWith(currentMonth));
-  const genreNames = [...new Set(sold.map(i => i.genre).filter(Boolean))];
-  if (!genreNames.length) {
-    area.innerHTML = '<div class="empty"><p>' + monthLabel + 'の売却データなし</p></div>';
-    return;
-  }
+  const month = _dashPrefix();
+  const [my, mm] = month.split('-');
+  const monthLabel = my + '年' + parseInt(mm) + '月';
+  const sold = items.filter(i => i.status === 'sold' && i.saleDate && i.saleDate.startsWith(month));
+
+  // 標準ジャンル＋売却実績のあるジャンルを対象に（目標は全ジャンルに設定できる）
+  const settings = getSettings();
+  const genreNames = [...new Set([...(settings.genres||[]), ...sold.map(i => i.genre).filter(Boolean)])];
   const palette = ['#4F46E5','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16','#F97316','#64748B'];
   const stats = genreNames.map(function(g, i) {
     const gs = sold.filter(function(it){ return it.genre === g; });
     const sales  = gs.reduce(function(s,it){ return s + (it.salePrice || 0); }, 0);
     const profit = gs.reduce(function(s,it){ return s + (calcItem(it).profit || 0); }, 0);
-    return { g: g, count: gs.length, sales: sales, profit: profit, color: palette[i % palette.length] };
-  }).sort(function(a,b){ return b.sales - a.sales; });
-  const totalSales = stats.reduce(function(s,x){ return s + x.sales; }, 0);
-  const pie = svgPieChartWithLabels(stats.map(function(s){ return {val: s.sales, color: s.color, label: s.g}; }), 340);
-  area.innerHTML = '<div style="display:flex;justify-content:center;margin-bottom:20px">'+pie+'</div>'
-    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'
-    + stats.map(function(s){
-        const pct = totalSales ? (s.sales / totalSales * 100).toFixed(1) : '0';
-        return '<div style="background:var(--gray-50);border-radius:10px;padding:10px 12px;border-left:3px solid '+s.color+'">'
-          + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
-          + '<span style="width:8px;height:8px;border-radius:50%;background:'+s.color+';flex-shrink:0"></span>'
-          + '<span style="font-size:12px;font-weight:700;color:var(--gray-600)">'+s.g+'</span></div>'
-          + '<div style="font-size:14px;font-weight:700;color:var(--primary)">¥'+fmt(s.sales)+'</div>'
-          + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:2px">'+s.count+'件 / '+pct+'%</div>'
-          + '<div style="font-size:20px;font-weight:700;color:var(--success)">¥'+fmt(s.profit)+'</div>'
-          + '<div style="font-size:11px;color:var(--gray-400)">利益</div></div>';
-      }).join('')
-    + '</div>';
+    return { g: g, count: gs.length, sales: sales, profit: profit, target: getTarget(month, g), color: palette[i % palette.length] };
+  }).sort(function(a,b){ return b.profit - a.profit; });
+
+  const totalProfit = stats.reduce(function(s,x){ return s + x.profit; }, 0);
+  const totalTarget = getTarget(month, '_total');
+  const totalPct = totalTarget ? Math.round(totalProfit / totalTarget * 100) : null;
+  const pieStats = stats.filter(s => s.sales > 0);
+  const pie = pieStats.length ? svgPieChartWithLabels(pieStats.map(function(s){ return {val: s.sales, color: s.color, label: s.g}; }), 340) : '';
+
+  const achColor = p => p==null ? 'var(--gray-400)' : (p>=100 ? 'var(--success)' : p>=70 ? 'var(--warning)' : 'var(--danger)');
+
+  // 全体目標ブロック
+  const totalBlock =
+    '<div style="background:var(--primary-light);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">'
+    + '<div><div style="font-size:12px;color:var(--gray-500)">全体の利益目標（'+monthLabel+'）</div>'
+    + '<div style="display:flex;align-items:center;gap:6px;margin-top:2px"><span style="font-size:14px;color:var(--gray-500)">¥</span>'
+    + '<input type="number" value="'+(totalTarget||'')+'" placeholder="0" min="0" step="1000" onchange="saveTarget(\''+month+'\',\'_total\',this.value)" style="width:120px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:6px;font-size:15px;font-family:inherit"></div></div>'
+    + '<div style="text-align:right"><div style="font-size:12px;color:var(--gray-500)">利益実績 ¥'+fmt(totalProfit)+'</div>'
+    + '<div style="font-size:24px;font-weight:800;color:'+achColor(totalPct)+'">'+(totalPct==null?'目標未設定':'達成率 '+totalPct+'%')+'</div></div></div>';
+
+  const cards = stats.map(function(s){
+    const pct = s.target ? Math.round(s.profit / s.target * 100) : null;
+    return '<div style="background:var(--gray-50);border-radius:10px;padding:10px 12px;border-left:3px solid '+s.color+'">'
+      + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
+      + '<span style="width:8px;height:8px;border-radius:50%;background:'+s.color+';flex-shrink:0"></span>'
+      + '<span style="font-size:12px;font-weight:700;color:var(--gray-600)">'+s.g+'</span></div>'
+      + '<div style="font-size:18px;font-weight:700;color:var(--success)">¥'+fmt(s.profit)+'</div>'
+      + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px">利益（売上¥'+fmt(s.sales)+' / '+s.count+'件）</div>'
+      + '<div style="display:flex;align-items:center;gap:4px"><span style="font-size:11px;color:var(--gray-400)">🎯</span>'
+      + '<input type="number" value="'+(s.target||'')+'" placeholder="目標" min="0" step="1000" onchange="saveTarget(\''+month+'\',\''+s.g+'\',this.value)" style="width:80px;padding:3px 6px;border:1px solid var(--gray-300);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+      + '<div style="font-size:16px;font-weight:700;margin-top:4px;color:'+achColor(pct)+'">'+(pct==null?'—':pct+'%')+'</div></div>';
+  }).join('');
+
+  area.innerHTML = totalBlock
+    + (pie ? '<div style="display:flex;justify-content:center;margin-bottom:20px">'+pie+'</div>' : '')
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">' + cards + '</div>';
 }
 
 function switchYear(year) {
@@ -1350,12 +1415,11 @@ function renderMonthlyTable(year, items) {
 }
 
 function renderPlatformStats(items) {
-  const now = new Date();
-  const currentMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const currentMonth = _dashPrefix();
   const sold = items.filter(i => i.status==='sold' && i.saleDate && i.saleDate.startsWith(currentMonth));
   const platforms = [...new Set(sold.map(i=>i.platform).filter(Boolean))];
   if (!platforms.length) {
-    document.getElementById('platform-stats').innerHTML = '<div class="empty"><p>当月の売却データなし</p></div>';
+    document.getElementById('platform-stats').innerHTML = '<div class="empty"><p>この月の売却データなし</p></div>';
     return;
   }
   const PLATFORM_COLORS = {
