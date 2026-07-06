@@ -153,9 +153,9 @@
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   thead th {
-    background: var(--gray-50); padding: 10px 12px; text-align: left;
+    background: var(--gray-50); padding: 8px 6px; text-align: left;
     font-size: 11px; font-weight: 600; color: var(--gray-500);
-    text-transform: uppercase; letter-spacing: 0.05em;
+    text-transform: uppercase; letter-spacing: 0.02em;
     border-bottom: 1px solid var(--gray-200); white-space: nowrap;
     position: sticky; top: 0; z-index: 10;
   }
@@ -163,9 +163,17 @@
     max-height: calc(100vh - 190px); overflow-y: auto; overflow-x: auto;
   }
   tbody td {
-    padding: 7px 10px; border-bottom: 1px solid var(--gray-100);
+    padding: 6px 6px; border-bottom: 1px solid var(--gray-100);
     color: var(--gray-700); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
   }
+  /* 列幅ドラッグ調整（在庫一覧） */
+  .inv-table thead th { position: sticky; }
+  .col-resizer {
+    position: absolute; top: 0; right: -3px; width: 7px; height: 100%;
+    cursor: col-resize; z-index: 11; user-select: none;
+  }
+  .col-resizer:hover, .col-resizer.dragging { background: var(--primary); opacity: .35; }
   tbody tr:hover { background: var(--gray-50); }
   tbody tr:last-child td { border-bottom: none; }
 
@@ -1509,6 +1517,7 @@ function renderInventory(el) {
         <option value="相川" ${invFilters.assignee==='相川'?'selected':''}>相川さん</option>
       </select>
       <button class="btn btn-outline btn-sm" onclick="exportCSV()">📥 CSV出力</button>
+      <button class="btn btn-outline btn-sm" onclick="resetColWidths()" title="ドラッグで変えた列幅を初期状態に戻す">↔️ 列幅リセット</button>
       <span id="inv-count" style="font-size:13px;font-weight:700;color:var(--gray-500);align-self:center"></span>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
@@ -1619,9 +1628,9 @@ function renderInventoryTable() {
     <thead>
       <tr>
         <th style="width:28px"></th>
-        <th style="width:44px">No</th><th>ステータス</th><th>ジャンル</th><th style="width:110px">ブランド</th>
-        <th style="min-width:180px">商品詳細</th><th>サイズ</th><th>仕入値</th><th style="min-width:130px">仕入れ先</th>
-        <th style="width:52px">仕入日</th><th>担当者</th><th>販売先</th><th>販売額</th><th>利益</th><th>利益率</th>
+        <th style="width:42px">No</th><th style="width:64px">ステータス</th><th style="width:56px">ジャンル</th><th style="width:110px">ブランド</th>
+        <th style="min-width:180px">商品詳細</th><th style="width:56px">サイズ</th><th style="width:64px">仕入値</th><th style="min-width:130px">仕入れ先</th>
+        <th style="width:48px">仕入日</th><th>担当者</th><th>販売先</th><th>販売額</th><th>利益</th><th>利益率</th>
         <th style="text-align:center">操作</th>
       </tr>
     </thead>
@@ -1673,7 +1682,56 @@ function renderInventoryTable() {
       }).join('')}
     </tbody>
   </table>`;
+  initColResizers(); // 列幅ドラッグ調整＋保存幅の適用
   requestAnimationFrame(() => window.scrollTo(0, scrollY));
+}
+
+// ── 在庫一覧：列幅をドラッグで調整（localStorageに保存し次回も維持） ──
+const COL_W_KEY = 'apparel_col_widths';
+function initColResizers() {
+  const table = document.querySelector('.inv-table');
+  if (!table) return;
+  const ths = [...table.querySelectorAll('thead th')];
+  // 保存済みの幅を適用
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem(COL_W_KEY)) || []; } catch(e) {}
+  if (saved.length === ths.length) {
+    table.style.tableLayout = 'fixed';
+    ths.forEach((th, i) => { if (saved[i]) { th.style.width = saved[i] + 'px'; th.style.minWidth = '0'; } });
+  }
+  ths.forEach((th, i) => {
+    const r = document.createElement('div');
+    r.className = 'col-resizer';
+    r.addEventListener('mousedown', e => {
+      e.preventDefault();
+      const startX = e.pageX;
+      // 初回ドラッグ時に全列の現在幅を固定してから調整（レイアウト崩れ防止）
+      if (table.style.tableLayout !== 'fixed') {
+        const cur = ths.map(t => t.offsetWidth);
+        table.style.tableLayout = 'fixed';
+        ths.forEach((t, j) => { t.style.width = cur[j] + 'px'; t.style.minWidth = '0'; });
+      }
+      const startW = th.offsetWidth;
+      r.classList.add('dragging');
+      const move = ev => { th.style.width = Math.max(30, startW + ev.pageX - startX) + 'px'; };
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        r.classList.remove('dragging');
+        localStorage.setItem(COL_W_KEY, JSON.stringify(ths.map(t => t.offsetWidth)));
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+    th.appendChild(r);
+  });
+}
+
+// 列幅を初期状態に戻す
+function resetColWidths() {
+  localStorage.removeItem(COL_W_KEY);
+  renderInventoryTable();
+  toast('↔️ 列幅を初期状態に戻しました');
 }
 
 function showBundleGroup(bundleId) {
