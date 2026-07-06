@@ -1606,9 +1606,29 @@ function renderInventoryTable() {
       (i.details||'').toLowerCase().includes(q)
     );
   }
-  // 件数表示（絞り込み結果）
+  // 件数表示：担当者で絞った時だけ「預け中◯件」（外注アプリの担当商品件数と同じ計算）
   const cntEl = document.getElementById('inv-count');
-  if (cntEl) cntEl.textContent = items.length + '件';
+  if (cntEl) {
+    if (f.assignee === '奥村' || f.assignee === '相川') {
+      const legacyKey = f.assignee === '奥村' ? 'A' : 'B';
+      const soldCutoff = Date.now() - 45*24*60*60*1000;
+      const azukari = getItems().filter(i => {
+        const a = i.assignee || '';
+        if (!(a === f.assignee || a === legacyKey)) return false;
+        // 発送チェック済みは除外（外注アプリと同じ）
+        if ((_workRecords||[]).some(r => r.itemId === i.id && r.type === 'pack' && r.assignee === f.assignee)) return false;
+        // 売却済みは直近45日の未発送分のみ含める（外注アプリと同じ）
+        if (i.status === 'sold') {
+          const t = i.saleDate ? Date.parse(i.saleDate) : 0;
+          if (!(t >= soldCutoff)) return false;
+        }
+        return true;
+      }).length;
+      cntEl.textContent = '預け中 ' + azukari + '件';
+    } else {
+      cntEl.textContent = '';
+    }
+  }
   items = items.slice().sort((a,b)=>{
     const na = (a.no != null && a.no !== '' && !isNaN(a.no)) ? Number(a.no) : -1;
     const nb = (b.no != null && b.no !== '' && !isNaN(b.no)) ? Number(b.no) : -1;
