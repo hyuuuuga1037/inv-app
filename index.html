@@ -44,7 +44,7 @@
   /* Layout */
   #app { display: flex; min-height: 100vh; }
   #sidebar {
-    width: 220px; background: white; border-right: 1px solid var(--gray-200);
+    width: 170px; background: white; border-right: 1px solid var(--gray-200);
     display: flex; flex-direction: column; position: fixed; top: 0; left: 0;
     height: 100vh; z-index: 100;
   }
@@ -62,7 +62,7 @@
   #sidebar nav a:hover { background: var(--gray-100); color: var(--gray-900); }
   #sidebar nav a.active { background: var(--primary-light); color: var(--primary); }
   #sidebar nav a .icon { font-size: 18px; width: 22px; text-align: center; }
-  #main { margin-left: 220px; flex: 1; padding: 24px; max-width: calc(100% - 220px); }
+  #main { margin-left: 170px; flex: 1; padding: 20px; max-width: calc(100% - 170px); }
   #page-header {
     margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between;
   }
@@ -1481,7 +1481,7 @@ function updateSelectionBar() {
 }
 
 // ==================== INVENTORY ====================
-let invFilters = { status: '', genre: '', platform: '', q: '' };
+let invFilters = { status: '', genre: '', platform: '', q: '', assignee: '' };
 
 function renderInventory(el) {
   const settings = getSettings();
@@ -1502,7 +1502,14 @@ function renderInventory(el) {
         <option value="">全販売先</option>
         ${settings.platforms.map(p=>`<option value="${p}" ${invFilters.platform===p?'selected':''}>${p}</option>`).join('')}
       </select>
+      <select id="inv-assignee" onchange="invFilters.assignee=this.value;renderInventoryTable()">
+        <option value="">全担当者</option>
+        <option value="self" ${invFilters.assignee==='self'?'selected':''}>自分</option>
+        <option value="奥村" ${invFilters.assignee==='奥村'?'selected':''}>奥村さん</option>
+        <option value="相川" ${invFilters.assignee==='相川'?'selected':''}>相川さん</option>
+      </select>
       <button class="btn btn-outline btn-sm" onclick="exportCSV()">📥 CSV出力</button>
+      <span id="inv-count" style="font-size:13px;font-weight:700;color:var(--gray-500);align-self:center"></span>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div class="table-scroll" id="inv-table-area"></div>
@@ -1555,8 +1562,7 @@ function invCardHTML(item) {
           <option value="相川" ${(item.assignee==='相川'||item.assignee==='B')?'selected':''}>相川さん</option>
         </select>
       </div>
-      <button onclick="toggleShootRequest(${item.id})"
-        style="padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid ${item.shootRequest?'var(--primary)':'var(--gray-200)'};background:${item.shootRequest?'var(--primary)':'white'};color:${item.shootRequest?'white':'var(--gray-500)'}">📷 ${item.shootRequest?'依頼中':'依頼する'}</button>
+      ${shootReqBtnHTML(item, '')}
     </div>
     <div class="inv-card-actions">
       ${st!=='sold'?`<button class="btn btn-success btn-sm" onclick="openSellModal(${item.id})">売却</button>`:''}
@@ -1575,6 +1581,14 @@ function renderInventoryTable() {
   if (f.status) items = items.filter(i=>(i.status||'unlisted')===f.status);
   if (f.genre) items = items.filter(i=>i.genre===f.genre);
   if (f.platform) items = items.filter(i=>i.platform===f.platform);
+  if (f.assignee) {
+    items = items.filter(i=>{
+      const a = i.assignee || '';
+      if (f.assignee === 'self') return !a;
+      const legacyKey = f.assignee === '奥村' ? 'A' : 'B';
+      return a === f.assignee || a === legacyKey;
+    });
+  }
   if (f.q) {
     const q = f.q.toLowerCase();
     items = items.filter(i=>
@@ -1583,6 +1597,9 @@ function renderInventoryTable() {
       (i.details||'').toLowerCase().includes(q)
     );
   }
+  // 件数表示（絞り込み結果）
+  const cntEl = document.getElementById('inv-count');
+  if (cntEl) cntEl.textContent = items.length + '件';
   items = items.slice().sort((a,b)=>{
     const na = (a.no != null && a.no !== '' && !isNaN(a.no)) ? Number(a.no) : -1;
     const nb = (b.no != null && b.no !== '' && !isNaN(b.no)) ? Number(b.no) : -1;
@@ -1601,10 +1618,10 @@ function renderInventoryTable() {
   <table class="inv-table" style="width:100%;border-collapse:collapse">
     <thead>
       <tr>
-        <th style="width:32px"></th>
-        <th>No</th><th>ステータス</th><th>ジャンル</th><th style="width:120px">ブランド</th>
-        <th style="min-width:200px">商品詳細</th><th>サイズ</th><th>仕入値</th><th style="width:90px">仕入れ先</th>
-        <th>仕入日</th><th>担当者</th><th>販売先</th><th>販売額</th><th>利益</th><th>利益率</th>
+        <th style="width:28px"></th>
+        <th style="width:44px">No</th><th>ステータス</th><th>ジャンル</th><th style="width:110px">ブランド</th>
+        <th style="min-width:180px">商品詳細</th><th>サイズ</th><th>仕入値</th><th style="min-width:130px">仕入れ先</th>
+        <th style="width:52px">仕入日</th><th>担当者</th><th>販売先</th><th>販売額</th><th>利益</th><th>利益率</th>
         <th style="text-align:center">操作</th>
       </tr>
     </thead>
@@ -1630,8 +1647,8 @@ function renderInventoryTable() {
           <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${item.details||'-'}</td>
           <td>${item.size||'-'}</td>
           <td>¥${fmt(item.purchasePrice||0)}${item.extraCost ? `<br><small style="color:var(--danger);font-size:11px">+取下げ¥${fmt(item.extraCost)}</small>` : ''}</td>
-          <td style="font-size:12px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.purchaseSource||''}">${item.purchaseSource||'-'}</td>
-          <td style="font-size:12px">${item.purchaseDate||'-'}</td>
+          <td style="font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.purchaseSource||''}">${item.purchaseSource||'-'}</td>
+          <td style="font-size:12px;white-space:nowrap">${item.purchaseDate ? item.purchaseDate.slice(5).replace('-','/') : '-'}</td>
           <td style="font-size:12px;text-align:center">
             <select onchange="changeAssignee(${item.id},this.value)" onclick="event.stopPropagation()"
               style="padding:3px 6px;border-radius:6px;font-size:11px;border:1px solid var(--gray-200);background:white;cursor:pointer;font-family:inherit">
@@ -1639,11 +1656,7 @@ function renderInventoryTable() {
               <option value="奥村" ${(item.assignee==='奥村'||item.assignee==='A')?'selected':''}>奥村さん</option>
               <option value="相川" ${(item.assignee==='相川'||item.assignee==='B')?'selected':''}>相川さん</option>
             </select>
-            <button onclick="event.stopPropagation();toggleShootRequest(${item.id})"
-              title="${item.shootRequest ? '撮影採寸の依頼を解除' : '撮影採寸を依頼（外注さんの下書きに自動反映）'}"
-              style="margin-top:4px;padding:3px 8px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid ${item.shootRequest ? 'var(--primary)' : 'var(--gray-200)'};background:${item.shootRequest ? 'var(--primary)' : 'white'};color:${item.shootRequest ? 'white' : 'var(--gray-500)'}">
-              📷 ${item.shootRequest ? '依頼中' : '依頼する'}
-            </button>
+            ${shootReqBtnHTML(item, 'event.stopPropagation();')}
           </td>
           <td>${item.platform ? `<span class="badge badge-platform">${item.platform}</span>` : '-'}</td>
           <td>${item.salePrice ? '¥'+fmt(item.salePrice) : '-'}</td>
@@ -1703,7 +1716,8 @@ function renderAdd(el) {
         </div>
         <div class="form-group">
           <label>仕入れ価格 <span style="color:var(--danger)">*</span></label>
-          <input type="number" id="a-price" placeholder="0">
+          <input type="text" inputmode="text" id="a-price" placeholder="0（例:1650*0.9-100）" oninput="showPriceCalc('a-price','a-price-calc')" onblur="applyPriceCalc('a-price')">
+          <div id="a-price-calc" style="font-size:11px;color:var(--primary);margin-top:2px;min-height:14px"></div>
         </div>
         <div class="form-group">
           <label>仕入れ先 <span style="color:var(--danger)">*</span></label>
@@ -1775,6 +1789,17 @@ function changeAssignee(itemId, value) {
   syncAssignee(itemId, value); // 専用コレクションにも書き込み
   const label = value === '奥村' ? '奥村さん' : value === '相川' ? '相川さん' : '自分（手元）';
   toast(`👤 担当者を「${label}」に変更しました`);
+}
+
+// 依頼中ボタンの表示（担当者ごとに色分け：自分=紫 / 奥村=緑 / 相川=オレンジ）
+function shootReqBtnHTML(item, extraAttr) {
+  if (!item.shootRequest) {
+    return `<button onclick="${extraAttr||''}toggleShootRequest(${item.id})" style="margin-top:4px;padding:3px 8px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid var(--gray-200);background:white;color:var(--gray-500)">📷 依頼する</button>`;
+  }
+  const a = item.assignee || '';
+  const who = (a==='奥村'||a==='A') ? '奥村' : (a==='相川'||a==='B') ? '相川' : '自分';
+  const color = who==='奥村' ? '#10B981' : who==='相川' ? '#F59E0B' : 'var(--primary)';
+  return `<button onclick="${extraAttr||''}toggleShootRequest(${item.id})" title="撮影採寸の依頼を解除" style="margin-top:4px;padding:3px 8px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid ${color};background:${color};color:white">📷 依頼中・${who}</button>`;
 }
 
 // 撮影採寸の依頼フラグを切り替え、外注アプリの下書き(drafts)に管理番号・商品詳細を自動反映
@@ -1860,10 +1885,48 @@ function toggleListedStatus(itemId) {
   renderInventoryTable(); // ページ全体ではなくテーブルのみ再描画（スクロール位置を保持）
 }
 
+// 数式入力に対応した価格評価。四則演算のみ許可（安全）。全角も半角に変換。
+function evalPrice(str) {
+  if (str == null) return NaN;
+  let s = String(str).trim();
+  if (s === '') return NaN;
+  // 全角数字・記号を半角へ
+  s = s.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+       .replace(/[＊✕×]/g, '*').replace(/[／÷]/g, '/').replace(/[＋]/g, '+').replace(/[－ー−]/g, '-')
+       .replace(/[．]/g, '.').replace(/[（]/g, '(').replace(/[）]/g, ')').replace(/[，,、]/g, '');
+  if (!/^[-+*/().0-9\s]+$/.test(s)) return NaN; // 数字と四則演算記号以外はNG
+  try {
+    const v = Function('"use strict";return (' + s + ')')();
+    return (typeof v === 'number' && isFinite(v)) ? Math.round(v) : NaN;
+  } catch (e) { return NaN; }
+}
+// 入力中に計算結果をプレビュー表示
+function showPriceCalc(inputId, previewId) {
+  const el = document.getElementById(inputId);
+  const pv = document.getElementById(previewId);
+  if (!el || !pv) return;
+  const raw = el.value.trim();
+  if (!raw || /^[0-9]+$/.test(raw)) { pv.textContent = ''; return; } // 単純な数字のみなら非表示
+  const v = evalPrice(raw);
+  pv.textContent = isNaN(v) ? '⚠️ 計算できない入力です' : '= ¥' + v.toLocaleString();
+  pv.style.color = isNaN(v) ? 'var(--danger)' : 'var(--primary)';
+}
+// フォーカスを外したら計算結果を確定してフィールドに反映
+function applyPriceCalc(inputId) {
+  const el = document.getElementById(inputId);
+  if (!el) return;
+  const raw = el.value.trim();
+  if (!raw || /^[0-9]+$/.test(raw)) return;
+  const v = evalPrice(raw);
+  if (!isNaN(v)) el.value = v;
+  const pv = document.getElementById(inputId + '-calc');
+  if (pv) pv.textContent = '';
+}
+
 function submitAdd() {
   const genre = document.getElementById('a-genre').value;
   const brand = document.getElementById('a-brand').value.trim();
-  const price = parseInt(document.getElementById('a-price').value) || 0;
+  const price = evalPrice(document.getElementById('a-price').value) || 0;
   const source = document.getElementById('a-source').value;
   const date = document.getElementById('a-date').value;
 
@@ -2544,7 +2607,8 @@ function openEditModal(itemId) {
       </div>
       <div class="form-group">
         <label>仕入れ価格</label>
-        <input type="number" id="e-price" value="${item.purchasePrice||0}">
+        <input type="text" inputmode="text" id="e-price" value="${item.purchasePrice||0}" oninput="showPriceCalc('e-price','e-price-calc')" onblur="applyPriceCalc('e-price')">
+        <div id="e-price-calc" style="font-size:11px;color:var(--primary);margin-top:2px;min-height:14px"></div>
       </div>
       <div class="form-group">
         <label>仕入れ先</label>
@@ -2628,7 +2692,7 @@ function submitEdit(itemId) {
     brand: document.getElementById('e-brand').value,
     details: document.getElementById('e-details').value,
     size: document.getElementById('e-size').value,
-    purchasePrice: parseInt(document.getElementById('e-price').value)||0,
+    purchasePrice: evalPrice(document.getElementById('e-price').value)||0,
     purchaseSource: document.getElementById('e-source').value,
     purchaseDate: document.getElementById('e-date').value,
     status,
