@@ -821,6 +821,37 @@ function forceSync() {
   migrateAssignees();
 }
 
+// 事故で混入したテスト用ダミー商品の判定（ブランドが「brand」＋数字のもの）
+function _isDummyItem(i) { return i && /^brand\d+$/.test(String(i.brand||'')); }
+
+// ダミーをローカルとクラウドの両方から恒久的に除去（起動時に1回）
+let _dummyPurged = false;
+function purgeDummyInventory() {
+  try {
+    const items = getItems();
+    const clean = items.filter(i => !_isDummyItem(i));
+    if (clean.length !== items.length) localStorage.setItem(DB_KEY, JSON.stringify(clean));
+    // 送信待ちキューからもダミーを除外（再アップロード防止）
+    try {
+      const p = JSON.parse(localStorage.getItem('apparel_pending') || '{}');
+      if (p.writes) { p.writes = []; localStorage.setItem('apparel_pending', JSON.stringify(p)); }
+    } catch(e) {}
+  } catch(e) {}
+  if (_db && !_dummyPurged) {
+    _dummyPurged = true;
+    _db.collection('inventory').where('brand','>=','brand').where('brand','<','brane').get()
+      .then(snap => {
+        const targets = snap.docs.filter(d => _isDummyItem(d.data()));
+        for (let i=0; i<targets.length; i+=400) {
+          const b = _db.batch();
+          targets.slice(i, i+400).forEach(d => b.delete(d.ref));
+          b.commit().catch(()=>{});
+        }
+        if (targets.length) console.log('ダミー削除:', targets.length);
+      }).catch(()=>{});
+  }
+}
+
 function initFirebase() {
   try {
     const cfg = {
@@ -840,11 +871,13 @@ function initFirebase() {
     // （担当者の変更は changeAssignee / bulkAssignAssignee / submitEdit が都度syncAssigneeで反映する）
     // setTimeout(migrateAssignees, 2000);
 
+    purgeDummyInventory(); // 事故で混入したテスト用ダミー(brand="brand"+数字)を除去
+
     _db.collection('inventory').onSnapshot(snapshot => {
-      // Firestoreからリアルタイム更新を受信
-      const fsItems = snapshot.docs.map(d => d.data());
-      _fsIds = new Set(snapshot.docs.map(d => d.id));
-      const localItems = getItems();
+      // Firestoreからリアルタイム更新を受信（ダミーは読み込み段階で除外し、二度と混ざらないようにする）
+      const fsItems = snapshot.docs.map(d => d.data()).filter(i => !_isDummyItem(i));
+      _fsIds = new Set(snapshot.docs.filter(d => !_isDummyItem(d.data())).map(d => d.id));
+      const localItems = getItems().filter(i => !_isDummyItem(i));
 
       // マージしてlocalStorageを更新
       const mergedArr = _merge(localItems, fsItems);
