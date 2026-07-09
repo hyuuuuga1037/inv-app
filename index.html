@@ -941,7 +941,7 @@ const DEFAULT_SETTINGS = {
     'ベクトルパーク', 'エコリング', 'ユーズレット', 'ゾゾタウン', 'メルカリ'
   ],
   platforms: ['メルカリ', 'ヤフーフリマ', 'ラクマ', 'ヤフオク'],
-  genres: ['スーツ', '洋服', 'デニム', 'ジャージ', '靴', 'バッグ', 'アクセサリー', 'その他'],
+  genres: ['スーツ', 'レディーススーツ', '洋服', 'デニム', 'ジャージ', '靴', 'バッグ', 'アクセサリー', 'その他'],
   shippingMethods: ['ゆうパック60', 'ゆうパック80', 'ゆうパック100', '宅急便60', '宅急便80', '宅急便100', 'らくらくメルカリ便', 'ゆうゆうメルカリ便', 'その他']
 };
 
@@ -952,7 +952,15 @@ function getSettings() {
   return {
     purchaseSources: saved.purchaseSources || DEFAULT_SETTINGS.purchaseSources,
     platforms: saved.platforms || DEFAULT_SETTINGS.platforms,
-    genres: saved.genres ? (saved.genres.includes('ジャージ') ? saved.genres : [...saved.genres.slice(0, 3), 'ジャージ', ...saved.genres.slice(3)]) : DEFAULT_SETTINGS.genres,
+    genres: (function() {
+      let g = saved.genres || DEFAULT_SETTINGS.genres;
+      if (!g.includes('ジャージ')) g = [...g.slice(0, 3), 'ジャージ', ...g.slice(3)];
+      if (!g.includes('レディーススーツ')) {
+        const i = g.indexOf('スーツ');
+        g = i >= 0 ? [...g.slice(0, i+1), 'レディーススーツ', ...g.slice(i+1)] : ['レディーススーツ', ...g];
+      }
+      return g;
+    })(),
     shippingMethods: saved.shippingMethods || DEFAULT_SETTINGS.shippingMethods
   };
 }
@@ -1973,7 +1981,7 @@ function toggleShootRequest(itemId) {
   renderInventoryTable();
 }
 
-const SHOOT_GENRE_MAP = { 'スーツ':'suit','靴':'shoes','バッグ':'bag','ジャージ':'jersey','洋服':'tops','デニム':'pants','その他':'tops' };
+const SHOOT_GENRE_MAP = { 'スーツ':'suit','レディーススーツ':'suit','靴':'shoes','バッグ':'bag','ジャージ':'jersey','洋服':'tops','デニム':'pants','その他':'tops' };
 
 function syncShootRequest(item, enabled) {
   if (!_db) return;
@@ -1992,7 +2000,7 @@ function syncShootRequest(item, enabled) {
           fromRequest: true
         }, { merge: true }).catch(e => console.error('採寸依頼の下書き更新エラー:', e));
       } else {
-        ref.set({
+        const newDraft = {
           id: item.id,
           mgmt: item.no || '',
           name: item.details || '',
@@ -2003,7 +2011,9 @@ function syncShootRequest(item, enabled) {
           measures: {},
           savedAt: new Date().toISOString(),
           fromRequest: true
-        }).catch(e => console.error('採寸依頼の下書き作成エラー:', e));
+        };
+        if (item.genre === 'レディーススーツ') newDraft.suitStyle = 'ladies';
+        ref.set(newDraft).catch(e => console.error('採寸依頼の下書き作成エラー:', e));
       }
     }).catch(e => console.error('採寸依頼の下書き確認エラー:', e));
   }
