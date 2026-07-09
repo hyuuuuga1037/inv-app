@@ -478,6 +478,10 @@
     <option value="奥村">奥村さん</option>
     <option value="相川">相川さん</option>
   </select>
+  <select id="sel-genre-select" onchange="bulkChangeGenre(this.value)"
+    style="padding:5px 10px;border-radius:7px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:#fff;color:#374151">
+    <option value="">🏷️ ジャンルを変更</option>
+  </select>
   <button class="btn btn-outline btn-sm" style="color:white;border-color:rgba(255,255,255,0.3)" onclick="clearSelection()">✕ 解除</button>
 </div>
 
@@ -1518,6 +1522,11 @@ function updateSelectionBar() {
   const label = document.getElementById('sel-count-label');
   const bundleBtn = document.getElementById('sel-bundle-btn');
   if (!bar) return;
+  const genreSel = document.getElementById('sel-genre-select');
+  if (genreSel && genreSel.options.length <= 1) {
+    const genres = getSettings().genres;
+    genreSel.innerHTML = '<option value="">🏷️ ジャンルを変更</option>' + genres.map(g => `<option value="${g}">${g}</option>`).join('');
+  }
   if (selectedItems.size >= 1) {
     bar.classList.add('show');
     label.textContent = `${selectedItems.size}件選択中`;
@@ -2038,6 +2047,22 @@ function bulkAssignAssignee(value) {
     syncAssignee(item.id, assigneeValue);
   });
   toast(`👤 ${selectedItems.size}件の担当者を「${label}」に変更しました`);
+  clearSelection();
+  renderInventory(document.getElementById('content'));
+}
+
+function bulkChangeGenre(value) {
+  const sel = document.getElementById('sel-genre-select');
+  if (sel) setTimeout(() => { sel.value = ''; }, 300);
+  if (!value || selectedItems.size === 0) return;
+  if (!confirm(`選択した ${selectedItems.size} 件のジャンルを「${value}」に変更しますか？`)) return;
+  const now = Date.now();
+  const items = getItems();
+  items.forEach((item, idx) => {
+    if (selectedItems.has(item.id)) items[idx] = { ...item, genre: value, _updatedAt: now };
+  });
+  saveItems(items);
+  toast(`🏷️ ${selectedItems.size}件のジャンルを「${value}」に変更しました`);
   clearSelection();
   renderInventory(document.getElementById('content'));
 }
