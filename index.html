@@ -2158,7 +2158,44 @@ function submitAdd() {
 let sellFilters = { genre: '', status: '', q: '' };
 
 function renderSellList(el) {
+  // 外枠（検索欄・フィルタ）は一度だけ描画し、以降は表だけを更新する
+  // （入力のたびに検索欄を作り直すとフォーカスが外れ、文字が打てなくなるため）
   const settings = getSettings();
+  el.innerHTML = `
+    <div class="filters">
+      <input type="text" id="sell-q" placeholder="🔍 管理番号・ブランド・商品名で検索" value="${sellFilters.q}"
+        oninput="sellFilters.q=this.value;debouncedRenderSellTable()" style="min-width:200px">
+      <select onchange="sellFilters.genre=this.value;renderSellTable()">
+        <option value="">全ジャンル</option>
+        ${settings.genres.map(g=>`<option value="${g}" ${sellFilters.genre===g?'selected':''}>${g}</option>`).join('')}
+      </select>
+      <select onchange="sellFilters.status=this.value;renderSellTable()">
+        <option value="">全ステータス</option>
+        <option value="unlisted" ${sellFilters.status==='unlisted'?'selected':''}>未出品</option>
+        <option value="listed" ${sellFilters.status==='listed'?'selected':''}>出品中</option>
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="resetColWidths('apparel_sell_col_widths', renderSellTable)" title="ドラッグで変えた列幅を初期状態に戻す">↔️ 列幅リセット</button>
+    </div>
+    <div class="card">
+      <div class="card-title">売却する商品を選んでください</div>
+      <div style="font-size:12px;color:var(--gray-400);margin-bottom:12px">
+        💡 2件以上チェックして「まとめ売り」ボタンを押すと、まとめ売り記録ができます
+      </div>
+      <div id="sell-table-area"></div>
+    </div>
+  `;
+  renderSellTable();
+}
+
+let _sellRenderTimer = null;
+function debouncedRenderSellTable() {
+  clearTimeout(_sellRenderTimer);
+  _sellRenderTimer = setTimeout(renderSellTable, 250);
+}
+
+function renderSellTable() {
+  const area = document.getElementById('sell-table-area');
+  if (!area) return;
   let items = getItems().filter(i => i.status !== 'sold').sort((a,b)=>{
     const na = (a.no != null && a.no !== '' && !isNaN(a.no)) ? Number(a.no) : -1;
     const nb = (b.no != null && b.no !== '' && !isNaN(b.no)) ? Number(b.no) : -1;
@@ -2175,27 +2212,11 @@ function renderSellList(el) {
     );
   }
   const assigneeLabel = a => (a==='奥村'||a==='A') ? '奥村さん' : (a==='相川'||a==='B') ? '相川さん' : '自分';
-  el.innerHTML = `
-    <div class="filters">
-      <input type="text" placeholder="🔍 管理番号・ブランド・商品名で検索" value="${sellFilters.q}"
-        oninput="sellFilters.q=this.value;renderSellList(document.getElementById('content'))" style="min-width:200px">
-      <select onchange="sellFilters.genre=this.value;renderSellList(document.getElementById('content'))">
-        <option value="">全ジャンル</option>
-        ${settings.genres.map(g=>`<option value="${g}" ${sellFilters.genre===g?'selected':''}>${g}</option>`).join('')}
-      </select>
-      <select onchange="sellFilters.status=this.value;renderSellList(document.getElementById('content'))">
-        <option value="">全ステータス</option>
-        <option value="unlisted" ${sellFilters.status==='unlisted'?'selected':''}>未出品</option>
-        <option value="listed" ${sellFilters.status==='listed'?'selected':''}>出品中</option>
-      </select>
-      <button class="btn btn-outline btn-sm" onclick="resetColWidths('apparel_sell_col_widths', ()=>renderSellList(document.getElementById('content')))" title="ドラッグで変えた列幅を初期状態に戻す">↔️ 列幅リセット</button>
-    </div>
-    <div class="card">
-      <div class="card-title">売却する商品を選んでください</div>
-      <div style="font-size:12px;color:var(--gray-400);margin-bottom:12px">
-        💡 2件以上チェックして「まとめ売り」ボタンを押すと、まとめ売り記録ができます
-      </div>
-      ${!items.length ? '<div class="empty"><div class="empty-icon">🎉</div><p>該当する商品がありません</p></div>' : `
+  if (!items.length) {
+    area.innerHTML = '<div class="empty"><div class="empty-icon">🎉</div><p>該当する商品がありません</p></div>';
+    return;
+  }
+  area.innerHTML = `
       <div class="table-scroll"><table class="sell-table" style="width:100%">
         <thead>
           <tr>
@@ -2231,9 +2252,7 @@ function renderSellList(el) {
             </tr>`;
           }).join('')}
         </tbody>
-      </table></div>`}
-    </div>
-  `;
+      </table></div>`;
   initColResizers('.sell-table', 'apparel_sell_col_widths');
 }
 
