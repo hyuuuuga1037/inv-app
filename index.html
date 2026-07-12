@@ -1803,15 +1803,18 @@ function _invMaybeLoadMore() {
 }
 function _invOnScroll() { if (currentPage === 'inventory') _invMaybeLoadMore(); }
 
-// ── 在庫一覧：列幅をドラッグで調整（localStorageに保存し次回も維持） ──
+// ── 一覧テーブル共通：列幅をドラッグで調整（localStorageに保存し次回も維持） ──
+// selector・storageKeyを指定すれば在庫一覧・売却記録など複数のテーブルで使い回せる
 const COL_W_KEY = 'apparel_col_widths';
-function initColResizers() {
-  const table = document.querySelector('.inv-table');
+function initColResizers(selector, storageKey) {
+  selector = selector || '.inv-table';
+  storageKey = storageKey || COL_W_KEY;
+  const table = document.querySelector(selector);
   if (!table) return;
   const ths = [...table.querySelectorAll('thead th')];
   // 保存済みの幅を適用
   let saved = [];
-  try { saved = JSON.parse(localStorage.getItem(COL_W_KEY)) || []; } catch(e) {}
+  try { saved = JSON.parse(localStorage.getItem(storageKey)) || []; } catch(e) {}
   if (saved.length === ths.length) {
     table.style.tableLayout = 'fixed';
     ths.forEach((th, i) => { if (saved[i]) { th.style.width = saved[i] + 'px'; th.style.minWidth = '0'; } });
@@ -1835,7 +1838,7 @@ function initColResizers() {
         document.removeEventListener('mousemove', move);
         document.removeEventListener('mouseup', up);
         r.classList.remove('dragging');
-        localStorage.setItem(COL_W_KEY, JSON.stringify(ths.map(t => t.offsetWidth)));
+        localStorage.setItem(storageKey, JSON.stringify(ths.map(t => t.offsetWidth)));
       };
       document.addEventListener('mousemove', move);
       document.addEventListener('mouseup', up);
@@ -1845,9 +1848,9 @@ function initColResizers() {
 }
 
 // 列幅を初期状態に戻す
-function resetColWidths() {
-  localStorage.removeItem(COL_W_KEY);
-  renderInventoryTable();
+function resetColWidths(storageKey, rerenderFn) {
+  localStorage.removeItem(storageKey || COL_W_KEY);
+  (rerenderFn || renderInventoryTable)();
   toast('↔️ 列幅を初期状態に戻しました');
 }
 
@@ -2152,7 +2155,7 @@ function submitAdd() {
 }
 
 // ==================== SELL LIST ====================
-let sellFilters = { genre: '', status: '' };
+let sellFilters = { genre: '', status: '', q: '' };
 
 function renderSellList(el) {
   const settings = getSettings();
@@ -2163,8 +2166,19 @@ function renderSellList(el) {
   });
   if (sellFilters.genre)  items = items.filter(i => i.genre === sellFilters.genre);
   if (sellFilters.status) items = items.filter(i => (i.status || 'unlisted') === sellFilters.status);
+  if (sellFilters.q) {
+    const q = sellFilters.q.toLowerCase();
+    items = items.filter(i =>
+      String(i.no||'').toLowerCase().includes(q) ||
+      (i.brand||'').toLowerCase().includes(q) ||
+      (i.details||'').toLowerCase().includes(q)
+    );
+  }
+  const assigneeLabel = a => (a==='奥村'||a==='A') ? '奥村さん' : (a==='相川'||a==='B') ? '相川さん' : '自分';
   el.innerHTML = `
     <div class="filters">
+      <input type="text" placeholder="🔍 管理番号・ブランド・商品名で検索" value="${sellFilters.q}"
+        oninput="sellFilters.q=this.value;renderSellList(document.getElementById('content'))" style="min-width:200px">
       <select onchange="sellFilters.genre=this.value;renderSellList(document.getElementById('content'))">
         <option value="">全ジャンル</option>
         ${settings.genres.map(g=>`<option value="${g}" ${sellFilters.genre===g?'selected':''}>${g}</option>`).join('')}
@@ -2174,6 +2188,7 @@ function renderSellList(el) {
         <option value="unlisted" ${sellFilters.status==='unlisted'?'selected':''}>未出品</option>
         <option value="listed" ${sellFilters.status==='listed'?'selected':''}>出品中</option>
       </select>
+      <button class="btn btn-outline btn-sm" onclick="resetColWidths('apparel_sell_col_widths', ()=>renderSellList(document.getElementById('content')))" title="ドラッグで変えた列幅を初期状態に戻す">↔️ 列幅リセット</button>
     </div>
     <div class="card">
       <div class="card-title">売却する商品を選んでください</div>
@@ -2181,13 +2196,13 @@ function renderSellList(el) {
         💡 2件以上チェックして「まとめ売り」ボタンを押すと、まとめ売り記録ができます
       </div>
       ${!items.length ? '<div class="empty"><div class="empty-icon">🎉</div><p>該当する商品がありません</p></div>' : `
-      <div class="table-scroll"><table>
+      <div class="table-scroll"><table class="sell-table" style="width:100%">
         <thead>
           <tr>
-            <th></th>
-            <th style="width:32px"></th>
-            <th>No</th><th>ステータス</th><th>ジャンル</th><th style="width:120px">ブランド</th>
-            <th style="min-width:200px">商品詳細</th><th>サイズ</th><th>仕入値</th><th style="width:90px">仕入れ先</th>
+            <th style="width:70px"></th>
+            <th style="width:28px"></th>
+            <th style="width:42px">No</th><th style="width:64px">ステータス</th><th style="width:56px">ジャンル</th><th style="width:110px">ブランド</th>
+            <th style="min-width:180px">商品詳細</th><th style="width:56px">サイズ</th><th style="width:64px">仕入値</th><th style="min-width:110px">仕入れ先</th><th style="width:70px">担当者</th>
           </tr>
         </thead>
         <tbody>
@@ -2211,13 +2226,15 @@ function renderSellList(el) {
               <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${item.details||'-'}</td>
               <td>${item.size||'-'}</td>
               <td>¥${fmt(item.purchasePrice||0)}</td>
-              <td>${item.purchaseSource||'-'}</td>
+              <td style="font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.purchaseSource||''}">${item.purchaseSource||'-'}</td>
+              <td style="font-size:12px">${assigneeLabel(item.assignee)}</td>
             </tr>`;
           }).join('')}
         </tbody>
       </table></div>`}
     </div>
   `;
+  initColResizers('.sell-table', 'apparel_sell_col_widths');
 }
 
 // ==================== BULK SOLD MODAL ====================
