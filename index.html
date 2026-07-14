@@ -717,18 +717,14 @@ function _getPending() {
 function _setPending(p) { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); }
 
 function _push(items, changedItems) {
-  // 変更分・削除分を「送信待ち」としてlocalStorageに記録してから送信を試みる。
+  // 変更分を「送信待ち」としてlocalStorageに記録してから送信を試みる。
   // 送信が失敗してもキューに残り続け、_flushPendingが自動で再送するためデータは消えない。
+  // ※「ローカル一覧に無いものをクラウドから一括削除する」ロジックは廃止した。
+  //   一覧の差分から削除を推測する方式は、一覧が欠けた状態で保存されただけで
+  //   クラウドの実データを大量削除してしまう危険があるため（実際に事故が起きた）。
+  //   削除は deleteItemFromCloud() が「削除ボタンで指定された1件だけ」を明示的に消す。
   if (!_db) return;
-  const newIds = new Set(items.map(i => String(i.id)));
   const p = _getPending();
-  // 削除待ち：以前Firestoreにあったが今のリストに無いID
-  _fsIds.forEach(id => {
-    if (!newIds.has(id)) {
-      if (!p.deletes.includes(id)) p.deletes.push(id);
-      p.writes = p.writes.filter(x => x !== id); // 削除が書込より優先
-    }
-  });
   // 書込待ち：変更があったアイテム
   const toWrite = changedItems || items;
   toWrite.forEach(item => {
@@ -736,7 +732,18 @@ function _push(items, changedItems) {
     if (!p.deletes.includes(id) && !p.writes.includes(id)) p.writes.push(id);
   });
   _setPending(p);
-  _fsIds = newIds;
+  _fsIds = new Set(items.map(i => String(i.id)));
+  _flushPending();
+}
+
+// 商品を1件だけクラウドから削除（削除ボタン経由の明示的な操作のみ）
+function deleteItemFromCloud(itemId) {
+  if (!_db) return;
+  const p = _getPending();
+  const id = String(itemId);
+  if (!p.deletes.includes(id)) p.deletes.push(id);
+  p.writes = p.writes.filter(x => x !== id);
+  _setPending(p);
   _flushPending();
 }
 
@@ -825,8 +832,27 @@ function forceSync() {
   migrateAssignees();
 }
 
-// 事故で混入したテスト用ダミー商品の判定（ブランドが「brand」＋数字のもの）
-function _isDummyItem(i) { return i && /^brand\d+$/.test(String(i.brand||'')); }
+// 事故で混入したテスト用ダミー商品・古いゴミデータの判定
+// ・ブランドが「brand」＋数字（テストダミー）
+// ・IDが6桁以下の数字（No.1〜6などの古いゴミ。本物のIDはDate.now()由来の13桁）
+function _isDummyItem(i) {
+  if (!i) return false;
+  if (/^brand\d+$/.test(String(i.brand||''))) return true;
+  if (/^\d{1,6}$/.test(String(i.id))) return true;
+  return false;
+}
+
+// 削除済みID（トゥームストーン）：削除ボタンで消した商品のIDをクラウドに記録し、
+// 他の端末のローカルコピーから復活しないようにする
+let _deletedIds = new Set();
+function recordDeletion(itemId) {
+  if (!_db) return;
+  _deletedIds.add(String(itemId));
+  _db.collection('settings').doc('deleted_items')
+    .set({ [String(itemId)]: Date.now() }, { merge: true })
+    .catch(e => console.error('削除記録エラー:', e));
+}
+function _isDeleted(i) { return i && _deletedIds.has(String(i.id)); }
 
 // ダミーをローカルとクラウドの両方から恒久的に除去（起動時に1回）
 let _dummyPurged = false;
@@ -835,10 +861,15 @@ function purgeDummyInventory() {
     const items = getItems();
     const clean = items.filter(i => !_isDummyItem(i));
     if (clean.length !== items.length) localStorage.setItem(DB_KEY, JSON.stringify(clean));
-    // 送信待ちキューからもダミーを除外（再アップロード防止）
+    // 送信待ちキューの安全化：
+    // ・書込待ちのダミーを除外
+    // ・削除待ちが異常に多い場合（旧バグの一括削除の残骸）は破棄して事故の再発を防ぐ
     try {
       const p = JSON.parse(localStorage.getItem('apparel_pending') || '{}');
-      if (p.writes) { p.writes = []; localStorage.setItem('apparel_pending', JSON.stringify(p)); }
+      let changed = false;
+      if (Array.isArray(p.writes)) { p.writes = []; changed = true; }
+      if (Array.isArray(p.deletes) && p.deletes.length > 10) { p.deletes = []; changed = true; }
+      if (changed) localStorage.setItem('apparel_pending', JSON.stringify(p));
     } catch(e) {}
   } catch(e) {}
   if (_db && !_dummyPurged) {
@@ -853,6 +884,10 @@ function purgeDummyInventory() {
         }
         if (targets.length) console.log('ダミー削除:', targets.length);
       }).catch(()=>{});
+    // 古いゴミデータ（docIDが1〜6等の短い数字）もクラウドから除去
+    for (let n = 1; n <= 6; n++) {
+      _db.collection('inventory').doc(String(n)).delete().catch(()=>{});
+    }
   }
 }
 
@@ -875,13 +910,26 @@ function initFirebase() {
     // （担当者の変更は changeAssignee / bulkAssignAssignee / submitEdit が都度syncAssigneeで反映する）
     // setTimeout(migrateAssignees, 2000);
 
-    purgeDummyInventory(); // 事故で混入したテスト用ダミー(brand="brand"+数字)を除去
+    // 削除済みID（トゥームストーン）を先に読み込み、以後ローカル・クラウド双方から除外する
+    _db.collection('settings').doc('deleted_items').onSnapshot(snap => {
+      _deletedIds = new Set(snap.exists ? Object.keys(snap.data()) : []);
+      // 既にローカルに残っている削除済み商品を掃除
+      const items = getItems();
+      const clean = items.filter(i => !_isDeleted(i));
+      if (clean.length !== items.length) {
+        localStorage.setItem(DB_KEY, JSON.stringify(clean));
+        if (currentPage === 'inventory' || currentPage === 'dashboard') renderPage(currentPage);
+      }
+    }, () => {});
+
+    purgeDummyInventory(); // 事故で混入したテスト用ダミー(brand="brand"+数字)・古いゴミを除去
 
     _db.collection('inventory').onSnapshot(snapshot => {
-      // Firestoreからリアルタイム更新を受信（ダミーは読み込み段階で除外し、二度と混ざらないようにする）
-      const fsItems = snapshot.docs.map(d => d.data()).filter(i => !_isDummyItem(i));
-      _fsIds = new Set(snapshot.docs.filter(d => !_isDummyItem(d.data())).map(d => d.id));
-      const localItems = getItems().filter(i => !_isDummyItem(i));
+      // Firestoreからリアルタイム更新を受信（ダミー・削除済みは読み込み段階で除外し、二度と混ざらないようにする）
+      const skip = i => _isDummyItem(i) || _isDeleted(i);
+      const fsItems = snapshot.docs.map(d => d.data()).filter(i => !skip(i));
+      _fsIds = new Set(snapshot.docs.filter(d => !skip(d.data())).map(d => d.id));
+      const localItems = getItems().filter(i => !skip(i));
 
       // マージしてlocalStorageを更新
       const mergedArr = _merge(localItems, fsItems);
@@ -2900,14 +2948,42 @@ function openEditModal(itemId) {
       </div>
       ` : ''}
     </div>
-    <div class="form-actions">
-      <button class="btn btn-outline" onclick="closeEditModal()">キャンセル</button>
-      <button class="btn btn-primary" onclick="submitEdit(${itemId})">保存する</button>
+    <div class="form-actions" style="justify-content:space-between">
+      ${item.status==='sold' ? `<button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="cancelSale(${itemId})" title="売却情報（販売額・販路・手数料等）をすべて消して出品中に戻します">↩️ 売却を取り消す</button>` : '<span></span>'}
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline" onclick="closeEditModal()">キャンセル</button>
+        <button class="btn btn-primary" onclick="submitEdit(${itemId})">保存する</button>
+      </div>
     </div>
   `;
   document.getElementById('edit-modal').classList.add('open');
 }
 function closeEditModal() { document.getElementById('edit-modal').classList.remove('open'); }
+
+// 誤って売却登録した時の取り消し：売却情報をすべてクリアして出品中に戻す
+function cancelSale(itemId) {
+  const items = getItems();
+  const idx = items.findIndex(i=>i.id===itemId);
+  if (idx < 0) return;
+  const item = items[idx];
+  let msg = `No.${item.no} の売却を取り消しますか？\n販売額・販売先・手数料・送料などの売却情報はすべて消去され、「出品中」に戻ります。`;
+  if (item.bundleId) msg += '\n\n⚠️ この商品はまとめ売りの一部です。取り消すとこの商品だけがまとめ売りから外れます（他の商品はそのまま）。';
+  if (!confirm(msg)) return;
+  items[idx] = {
+    ...item,
+    status: 'listed',
+    saleDate: null, salePrice: null, platform: null,
+    commission: 0, commissionRate: 0,
+    shippingCost: 0, shippingAdj: 0, shippingMethod: null,
+    boxCost: 0, buyerPaysShipping: false,
+    bundleId: null, bundleTotal: null,
+    _updatedAt: Date.now()
+  };
+  saveItems(items);
+  closeEditModal();
+  toast(`↩️ No.${item.no} の売却を取り消しました（出品中に戻しました）`);
+  renderPage(currentPage);
+}
 
 function submitEdit(itemId) {
   const items = getItems();
@@ -2954,8 +3030,11 @@ function openDeleteModal(itemId) {
 function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); deleteTargetId = null; }
 function confirmDelete() {
   if (!deleteTargetId) return;
-  const items = getItems().filter(i=>i.id!==deleteTargetId);
-  saveItems(items);
+  const id = deleteTargetId;
+  const items = getItems().filter(i=>i.id!==id);
+  localStorage.setItem(DB_KEY, JSON.stringify(items));
+  deleteItemFromCloud(id);   // クラウドからも「その1件だけ」を明示削除
+  recordDeletion(id);        // 削除済みとして記録（他端末から復活させない）
   closeDeleteModal();
   toast('🗑️ 削除しました');
   renderPage(currentPage);
