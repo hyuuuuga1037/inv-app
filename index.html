@@ -933,7 +933,26 @@ function initFirebase() {
 
       // マージしてlocalStorageを更新
       const mergedArr = _merge(localItems, fsItems);
+
+      // 半端状態の自動修復：「売却済み以外なのに売却情報が残っている」商品をクリアする。
+      // （以前、ステータスをsold→出品中に戻しても売却額等が消えず残る不具合があった。No.1318等）
+      const _healed = [];
+      for (let k = 0; k < mergedArr.length; k++) {
+        const it = mergedArr[k];
+        if (it.status !== 'sold' && (it.salePrice || it.saleDate || it.platform)) {
+          const fixed = { ...it,
+            saleDate: null, salePrice: null, platform: null,
+            commission: 0, commissionRate: 0,
+            shippingCost: 0, shippingAdj: 0, shippingMethod: null,
+            boxCost: 0, buyerPaysShipping: false,
+            bundleId: null, bundleTotal: null,
+            _updatedAt: Date.now() };
+          mergedArr[k] = fixed;
+          _healed.push(fixed);
+        }
+      }
       localStorage.setItem(DB_KEY, JSON.stringify(mergedArr));
+      if (_healed.length) _push(mergedArr, _healed); // 修正した商品だけをクラウドへ送信
 
       // ローカルにしかないアイテムを送信待ちに登録（昨晩の1325以降のような未送信分を救済）
       const fsMap = new Map(fsItems.map(i => [String(i.id), i]));
@@ -3011,7 +3030,14 @@ function submitEdit(itemId) {
       commission: parseInt(document.getElementById('e-commission')?.value)||0,
       shippingCost: parseInt(document.getElementById('e-shipping')?.value)||0,
       boxCost: parseInt(document.getElementById('e-box')?.value)||0,
-    } : {})
+    } : {
+      // 売却済み以外に戻したら売却情報を消去（消し忘れて「出品中なのに売却額が残る」半端状態を防ぐ）
+      saleDate: null, salePrice: null, platform: null,
+      commission: 0, commissionRate: 0,
+      shippingCost: 0, shippingAdj: 0, shippingMethod: null,
+      boxCost: 0, buyerPaysShipping: false,
+      bundleId: null, bundleTotal: null,
+    })
   };
   saveItems(items);
   syncAssignee(item.id, items[idx].assignee); // 担当者専用データalso同期（外注アプリと整合）
