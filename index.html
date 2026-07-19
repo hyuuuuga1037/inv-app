@@ -918,7 +918,7 @@ function initFirebase() {
       const clean = items.filter(i => !_isDeleted(i));
       if (clean.length !== items.length) {
         localStorage.setItem(DB_KEY, JSON.stringify(clean));
-        if (currentPage === 'inventory' || currentPage === 'dashboard') renderPage(currentPage);
+        if (currentPage === 'inventory' || currentPage === 'dashboard') refreshView();
       }
     }, () => {});
 
@@ -964,7 +964,8 @@ function initFirebase() {
       _flushPending();
 
       // 手動同期中、または登録フォーム表示中（入力内容を消さないため）は再描画しない
-      if (!_syncBusy && currentPage !== 'add') renderPage(currentPage);
+      // 在庫一覧では表だけ描き直してスクロール位置を保つ（同期エコーで先頭に戻らないように）
+      if (!_syncBusy && currentPage !== 'add') refreshView();
 
     }, e => {
       console.error('Firestore error:', e);
@@ -1802,6 +1803,13 @@ function renderInventoryTable() {
   requestAnimationFrame(() => window.scrollTo(0, scrollY));
 }
 
+// データ変更後の再描画：在庫一覧ページなら表だけ描き直してスクロール位置を保つ。
+// （ページ全体のrenderPageだと毎回先頭に戻ってしまうため。編集・ステータス変更・同期エコー共通で使う）
+function refreshView() {
+  if (currentPage === 'inventory') renderInventoryTable();
+  else renderPage(currentPage);
+}
+
 // 在庫1行分のHTML（表）
 function invRowHTML(item) {
   const c = calcItem(item);
@@ -1966,6 +1974,10 @@ function renderAdd(el) {
         </div>
         <div class="form-group">
           <label>仕入れ先 <span style="color:var(--danger)">*</span></label>
+          <select id="a-source-select" onchange="if(this.value){document.getElementById('a-source').value=this.value;this.selectedIndex=0;}" style="margin-bottom:6px">
+            <option value="">▼ 登録店舗から選ぶ（いつでも変更可）</option>
+            ${settings.purchaseSources.map(s=>`<option value="${s}">${s}</option>`).join('')}
+          </select>
           <input type="text" id="a-source" placeholder="例：セカンドストリート 大宮店" list="source-list" autocomplete="off">
           <datalist id="source-list">
             ${settings.purchaseSources.map(s=>`<option value="${s}">`).join('')}
@@ -2118,7 +2130,7 @@ function bulkAssignAssignee(value) {
   });
   toast(`👤 ${selectedItems.size}件の担当者を「${label}」に変更しました`);
   clearSelection();
-  renderInventory(document.getElementById('content'));
+  renderInventoryTable(); // 表だけ描き直してスクロール位置を保つ
 }
 
 function bulkChangeGenre(value) {
@@ -2134,7 +2146,7 @@ function bulkChangeGenre(value) {
   saveItems(items);
   toast(`🏷️ ${selectedItems.size}件のジャンルを「${value}」に変更しました`);
   clearSelection();
-  renderInventory(document.getElementById('content'));
+  renderInventoryTable(); // 表だけ描き直してスクロール位置を保つ
 }
 
 function toggleListedStatus(itemId) {
@@ -2387,7 +2399,7 @@ function submitBulkSold(ids) {
   clearSelection();
   closeBulkSoldModal();
   toast(`✅ ${count}件を売却済みにしました`);
-  renderPage(currentPage);
+  refreshView();
 }
 
 // ==================== BUNDLE SELL MODAL ====================
@@ -2606,7 +2618,7 @@ function submitWithdraw(itemId) {
   saveItems(items);
   closeWithdrawModal();
   toast('✅ 取り下げ手数料を記録しました（未出品に戻しました）');
-  if (currentPage === 'inventory') renderInventory(document.getElementById('content'));
+  if (currentPage === 'inventory') renderInventoryTable(); // 表だけ描き直してスクロール位置を保つ
   if (currentPage === 'dashboard') renderDashboard(document.getElementById('content'));
 }
 
@@ -2657,7 +2669,7 @@ function submitBundleSell(ids) {
   clearSelection();
   closeBundleModal();
   toast(`✅ まとめ売り（${targets.length}点）を記録しました`);
-  renderPage(currentPage);
+  refreshView();
 }
 
 // ==================== SELL MODAL ====================
@@ -2871,7 +2883,7 @@ function submitSell(itemId) {
   closeSellModal();
   toast('✅ 売却を記録しました');
   if (currentPage === 'sell') renderSellList(document.getElementById('content'));
-  if (currentPage === 'inventory') renderInventory(document.getElementById('content'));
+  if (currentPage === 'inventory') renderInventoryTable(); // 表だけ描き直してスクロール位置を保つ
   if (currentPage === 'dashboard') renderDashboard(document.getElementById('content'));
 }
 
@@ -2908,6 +2920,10 @@ function openEditModal(itemId) {
       </div>
       <div class="form-group">
         <label>仕入れ先</label>
+        <select id="e-source-select" onchange="if(this.value){document.getElementById('e-source').value=this.value;this.selectedIndex=0;}" style="margin-bottom:6px">
+          <option value="">▼ 登録店舗から選ぶ（いつでも変更可）</option>
+          ${settings.purchaseSources.map(s=>`<option value="${s}">${s}</option>`).join('')}
+        </select>
         <input type="text" id="e-source" value="${item.purchaseSource||''}" placeholder="例：セカンドストリート 大宮店" list="e-source-list" autocomplete="off">
         <datalist id="e-source-list">
           ${settings.purchaseSources.map(s=>`<option value="${s}">`).join('')}
@@ -3001,7 +3017,7 @@ function cancelSale(itemId) {
   saveItems(items);
   closeEditModal();
   toast(`↩️ No.${item.no} の売却を取り消しました（出品中に戻しました）`);
-  renderPage(currentPage);
+  refreshView();
 }
 
 function submitEdit(itemId) {
@@ -3043,7 +3059,7 @@ function submitEdit(itemId) {
   syncAssignee(item.id, items[idx].assignee); // 担当者専用データalso同期（外注アプリと整合）
   closeEditModal();
   toast('✅ 変更を保存しました');
-  renderPage(currentPage);
+  refreshView();
 }
 
 // ==================== DELETE ====================
@@ -3063,7 +3079,7 @@ function confirmDelete() {
   recordDeletion(id);        // 削除済みとして記録（他端末から復活させない）
   closeDeleteModal();
   toast('🗑️ 削除しました');
-  renderPage(currentPage);
+  refreshView();
 }
 
 // ==================== SETTINGS ====================
