@@ -1630,7 +1630,7 @@ function renderInventory(el) {
   const settings = getSettings();
   el.innerHTML = `
     <div class="filters">
-      <input type="text" placeholder="🔍 ブランド・商品名で検索" id="inv-q" value="${invFilters.q}" oninput="invFilters.q=this.value;debouncedRenderInv()" style="min-width:180px">
+      <input type="text" placeholder="🔍 ブランド・商品名・仕入れ先で検索" id="inv-q" value="${invFilters.q}" oninput="invFilters.q=this.value;debouncedRenderInv()" style="min-width:180px">
       <select id="inv-status" onchange="invFilters.status=this.value;renderInventoryTable()">
         <option value="">全ステータス</option>
         <option value="unlisted" ${invFilters.status==='unlisted'?'selected':''}>未出品</option>
@@ -1738,7 +1738,8 @@ function renderInventoryTable() {
     items = items.filter(i=>
       String(i.no||'').toLowerCase().includes(q) ||
       (i.brand||'').toLowerCase().includes(q) ||
-      (i.details||'').toLowerCase().includes(q)
+      (i.details||'').toLowerCase().includes(q) ||
+      (i.purchaseSource||'').toLowerCase().includes(q)
     );
   }
   // 件数表示：担当者で絞った時だけ「預け中◯件」（外注アプリの担当商品件数と同じ計算）
