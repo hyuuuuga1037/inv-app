@@ -2162,7 +2162,7 @@ function bulkAssignAssignee(value) {
     syncAssignee(item.id, assigneeValue);
   });
   toast(`👤 ${selectedItems.size}件の担当者を「${label}」に変更しました`);
-  clearSelection();
+  // 選択は解除しない：続けて「撮影依頼」など別の一括操作をチェックし直さず行えるように
   renderInventoryTable(); // 表だけ描き直してスクロール位置を保つ
 }
 
@@ -2183,7 +2183,7 @@ function bulkShootRequest(value) {
   // 外注アプリの下書きにも同期（依頼ON時は下書き作成/更新、OFF時は下書きを残す＝単体操作と同じ挙動）
   items.filter(item => selectedItems.has(item.id)).forEach(item => syncShootRequest(item, enable));
   toast(`📷 ${n}件を${enable ? '撮影依頼しました' : '依頼解除しました'}`);
-  clearSelection();
+  // 選択は解除しない：続けて別の一括操作を行えるように
   renderInventoryTable();
 }
 
@@ -2227,7 +2227,7 @@ function bulkChangeGenre(value) {
   });
   saveItems(items);
   toast(`🏷️ ${selectedItems.size}件のジャンルを「${value}」に変更しました`);
-  clearSelection();
+  // 選択は解除しない：続けて別の一括操作を行えるように
   renderInventoryTable(); // 表だけ描き直してスクロール位置を保つ
 }
 
