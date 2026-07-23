@@ -482,7 +482,38 @@
     style="padding:5px 10px;border-radius:7px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:#fff;color:#374151">
     <option value="">🏷️ ジャンルを変更</option>
   </select>
+  <select id="sel-shoot-select" onchange="bulkShootRequest(this.value)"
+    style="padding:5px 10px;border-radius:7px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:#fff;color:#374151">
+    <option value="">📷 撮影依頼</option>
+    <option value="request">依頼する</option>
+    <option value="cancel">依頼を解除</option>
+  </select>
   <button class="btn btn-outline btn-sm" style="color:white;border-color:rgba(255,255,255,0.3)" onclick="clearSelection()">✕ 解除</button>
+</div>
+
+<!-- 仕入れ合計モーダル -->
+<div class="modal-overlay" id="purchase-sum-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h2>🧮 仕入れ合計</h2>
+      <button class="modal-close" onclick="closePurchaseSumModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--gray-500);margin-bottom:12px">管理番号の範囲を指定すると、その範囲の仕入れ値の合計を計算します。レシートの合計と照合できます。</p>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+        <span>No.</span>
+        <input type="number" id="psum-from" placeholder="開始" oninput="calcPurchaseSum()" style="width:90px">
+        <span>〜</span>
+        <input type="number" id="psum-to" placeholder="終了" oninput="calcPurchaseSum()" style="width:90px">
+      </div>
+      <div id="psum-result" style="background:var(--gray-100);border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:13px;color:var(--gray-500)">開始・終了の番号を入力してください</div>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closePurchaseSumModal()">閉じる</button>
+    </div>
+  </div>
 </div>
 
 <!-- Bulk Sold Modal -->
@@ -1652,6 +1683,7 @@ function renderInventory(el) {
         <option value="相川" ${invFilters.assignee==='相川'?'selected':''}>相川さん</option>
       </select>
       <button class="btn btn-outline btn-sm" onclick="exportCSV()">📥 CSV出力</button>
+      <button class="btn btn-outline btn-sm" onclick="openPurchaseSumModal()" title="管理番号の範囲を指定して仕入れ値の合計を確認（レシート照合用）">🧮 仕入れ合計</button>
       <button class="btn btn-outline btn-sm" onclick="resetColWidths()" title="ドラッグで変えた列幅を初期状態に戻す">↔️ 列幅リセット</button>
       <span id="inv-count" style="font-size:13px;font-weight:700;color:var(--gray-500);align-self:center"></span>
     </div>
@@ -2132,6 +2164,55 @@ function bulkAssignAssignee(value) {
   toast(`👤 ${selectedItems.size}件の担当者を「${label}」に変更しました`);
   clearSelection();
   renderInventoryTable(); // 表だけ描き直してスクロール位置を保つ
+}
+
+// 撮影採寸の依頼を選択商品にまとめて設定／解除（外注アプリの下書きにも反映）
+function bulkShootRequest(value) {
+  const sel = document.getElementById('sel-shoot-select');
+  if (sel) setTimeout(() => { sel.value = ''; }, 300);
+  if (!value || selectedItems.size === 0) return;
+  const enable = value === 'request';
+  const n = selectedItems.size;
+  if (!confirm(`選択した ${n} 件を${enable ? '撮影依頼' : '依頼解除'}しますか？`)) return;
+  const now = Date.now();
+  const items = getItems();
+  items.forEach((item, idx) => {
+    if (selectedItems.has(item.id)) items[idx] = { ...item, shootRequest: enable, _updatedAt: now };
+  });
+  saveItems(items); // 在庫本体を保存＆クラウド反映
+  // 外注アプリの下書きにも同期（依頼ON時は下書き作成/更新、OFF時は下書きを残す＝単体操作と同じ挙動）
+  items.filter(item => selectedItems.has(item.id)).forEach(item => syncShootRequest(item, enable));
+  toast(`📷 ${n}件を${enable ? '撮影依頼しました' : '依頼解除しました'}`);
+  clearSelection();
+  renderInventoryTable();
+}
+
+// ==================== 仕入れ合計（レシート照合） ====================
+function openPurchaseSumModal() {
+  document.getElementById('purchase-sum-modal').classList.add('open');
+  document.getElementById('psum-from').value = '';
+  document.getElementById('psum-to').value = '';
+  document.getElementById('psum-result').innerHTML = '<div style="font-size:13px;color:var(--gray-500)">開始・終了の番号を入力してください</div>';
+  setTimeout(() => document.getElementById('psum-from').focus(), 100);
+}
+function closePurchaseSumModal() { document.getElementById('purchase-sum-modal').classList.remove('open'); }
+function calcPurchaseSum() {
+  const fromV = document.getElementById('psum-from').value;
+  const toV = document.getElementById('psum-to').value;
+  const res = document.getElementById('psum-result');
+  if (fromV === '' || toV === '') {
+    res.innerHTML = '<div style="font-size:13px;color:var(--gray-500)">開始・終了の番号を入力してください</div>';
+    return;
+  }
+  let a = parseInt(fromV), b = parseInt(toV);
+  if (isNaN(a) || isNaN(b)) return;
+  if (a > b) { const t = a; a = b; b = t; } // 逆順でもOK
+  const hit = getItems().filter(i => { const n = Number(i.no); return !isNaN(n) && n >= a && n <= b; });
+  const total = hit.reduce((s, i) => s + (Number(i.purchasePrice) || 0), 0);
+  res.innerHTML = `
+    <div style="font-size:13px;color:var(--gray-500)">No.${a} 〜 No.${b}</div>
+    <div style="font-size:26px;font-weight:800;color:var(--primary);margin:4px 0">¥${fmt(total)}</div>
+    <div style="font-size:13px;color:var(--gray-500)">対象 ${hit.length}件</div>`;
 }
 
 function bulkChangeGenre(value) {
