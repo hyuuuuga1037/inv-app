@@ -1248,6 +1248,28 @@ function renderCurrentMonthSummary(items) {
   const monthlyProfit = profit - outsourceCost - shippingCost;
   const todayStr = isCurrent ? new Date().toISOString().slice(0,10) : (prefix + '-01');
 
+  // 🔥 爆益ランキング：当月に売れた商品を利益額の大きい順にトップ5
+  const ranked = sold
+    .map(i => ({ item: i, profit: calcItem(i).profit || 0 }))
+    .sort((a, b) => b.profit - a.profit)
+    .slice(0, 5);
+  const rankHTML = `
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--gray-200)">
+      <div style="font-size:13px;font-weight:700;color:var(--gray-700);margin-bottom:10px">🔥 爆益ランキング（${label}・利益トップ5）</div>
+      ${ranked.length ? ranked.map((r, idx) => {
+        const medal = ['🥇','🥈','🥉','4','5'][idx];
+        const it = r.item, c = calcItem(it);
+        return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--gray-100)">
+          <span style="font-size:16px;width:28px;text-align:center;flex:none;color:var(--gray-500);font-weight:700">${medal}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">No.${it.no} ${it.brand||''}<span style="color:var(--gray-400);font-weight:400"> ${it.details||''}</span></div>
+            <div style="font-size:11px;color:var(--gray-400)">${it.platform||'-'}　売値¥${fmt(it.salePrice||0)}　利益率${c.profitRate!=null?Math.round(c.profitRate):'-'}%</div>
+          </div>
+          <div style="font-weight:800;color:var(--success);font-size:15px;white-space:nowrap;flex:none">¥${fmt(r.profit)}</div>
+        </div>`;
+      }).join('') : '<div style="font-size:12px;color:var(--gray-400);padding:4px 0">まだ売却実績がありません</div>'}
+    </div>`;
+
   area.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div style="display:flex;align-items:center;gap:6px">
@@ -1313,6 +1335,7 @@ function renderCurrentMonthSummary(items) {
         <div style="font-size:26px;font-weight:800;color:${monthlyProfit>=0?'var(--success)':'var(--danger)'}">¥${fmt(monthlyProfit)}</div>
       </div>
     </div>
+    ${rankHTML}
   `;
 }
 
