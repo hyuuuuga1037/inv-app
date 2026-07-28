@@ -669,8 +669,11 @@ function saveTarget(month, key, value) {
   renderGenreStats(getItems());
 }
 
+// 外注さんとのやり取り開始月。これより前の月は外注費を計上しない
+const OUTSOURCE_START = '2026-06';
 // 指定月（YYYY-MM）の外注費合計を算出（作業単価の合計＋場所代固定報酬）
 function calcOutsourceCost(prefix) {
+  if (prefix < OUTSOURCE_START) return 0; // 開始月より前は外注費ゼロ
   let total = 0;
   (_workRecords || []).forEach(r => {
     if (r.date && r.date.startsWith(prefix)) total += (r.unitPrice || 0);
