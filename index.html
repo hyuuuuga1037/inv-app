@@ -2166,8 +2166,22 @@ function syncShootRequest(item, enabled) {
         ref.set(newDraft).catch(e => console.error('採寸依頼の下書き作成エラー:', e));
       }
     }).catch(e => console.error('採寸依頼の下書き確認エラー:', e));
+  } else {
+    // 依頼解除：自動作成されただけで中身が空の下書きは削除する（誤って依頼した時の後片付け）。
+    // 外注さんが採寸データ等を入力済みの下書きは消さない（作業内容を守るため）。
+    ref.get().then(snap => {
+      if (!snap.exists) return;
+      const d = snap.data() || {};
+      const m = d.measures || {};
+      const hasMeasureData = Object.keys(m).some(k => {
+        const v = m[k];
+        return v !== '' && v !== 0 && v !== null && v !== undefined && v !== false;
+      });
+      // 依頼で自動作成された下書き & 採寸・状態・アピール・生成文が未入力 → 空とみなして削除
+      const untouched = d.fromRequest && !hasMeasureData && !d.cond && !d.ship && !d.appeal && !d.genText;
+      if (untouched) ref.delete().catch(e => console.error('依頼解除時の下書き削除エラー:', e));
+    }).catch(e => console.error('依頼解除の下書き確認エラー:', e));
   }
-  // 依頼解除時は下書きを残す（外注さんが既に入力済みの可能性があるため自動削除しない）
 }
 
 function bulkAssignAssignee(value) {
