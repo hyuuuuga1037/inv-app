@@ -1156,6 +1156,7 @@ function renderDashboard(el) {
   const inStockItems = items.filter(i => i.status !== 'sold');
   const inStockCount = inStockItems.length;
   const inStockValue = inStockItems.reduce((s,i) => s + (i.purchasePrice || 0), 0);
+  const avgStockUnit = inStockCount ? Math.round(inStockValue / inStockCount) : 0;
 
   el.innerHTML = `
     <div class="card" style="margin-bottom:16px">
@@ -1177,6 +1178,11 @@ function renderDashboard(el) {
         <div class="stat-label">在庫合計金額</div>
         <div class="stat-value">¥${fmt(inStockValue)}</div>
         <div class="stat-sub">仕入れ価格の合計</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">在庫平均単価</div>
+        <div class="stat-value">¥${fmt(avgStockUnit)}</div>
+        <div class="stat-sub">在庫合計金額 ÷ 在庫数</div>
       </div>
     </div>
     <div class="card">
@@ -1251,6 +1257,10 @@ function renderCurrentMonthSummary(items) {
   const monthlyProfit = profit - outsourceCost - shippingCost;
   const todayStr = isCurrent ? new Date().toISOString().slice(0,10) : (prefix + '-01');
 
+  // 赤字取引：利益がマイナスで売れたもの（仕入ミスの検知）
+  const lossItems = sold.filter(i => (calcItem(i).profit || 0) < 0);
+  const lossTotal = lossItems.reduce((s,i) => s + (calcItem(i).profit || 0), 0);
+
   // 🔥 爆益ランキング：当月に売れた商品を利益額の大きい順にトップ5
   const ranked = sold
     .map(i => ({ item: i, profit: calcItem(i).profit || 0 }))
@@ -1297,6 +1307,10 @@ function renderCurrentMonthSummary(items) {
         <div>
           <div style="font-size:11px;color:var(--gray-400)">取引件数</div>
           <div style="font-size:18px;font-weight:700;color:var(--gray-700)">${sold.length}件</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--gray-400)">赤字取引</div>
+          <div style="font-size:18px;font-weight:700;color:${lossItems.length?'var(--danger)':'var(--gray-400)'}">${lossItems.length}件${lossItems.length?`<span style="font-size:12px"> （−¥${fmt(Math.abs(lossTotal))}）</span>`:''}</div>
         </div>
       </div>
     </div>
@@ -1530,6 +1544,12 @@ function shiftYear(dir) {
   if (next >= 0 && next < _dashYears.length) switchYear(_dashYears[next]);
 }
 
+let _showMonthDetail = false; // 月別テーブルの詳細列（平均単価）表示フラグ
+function toggleMonthDetail(on) {
+  _showMonthDetail = on;
+  renderMonthlyTable(_dashActiveYear, getItems());
+}
+
 function renderMonthlyTable(year, items) {
   const months = Array.from({length:12},(_,i)=>i+1);
 
@@ -1555,11 +1575,20 @@ function renderMonthlyTable(year, items) {
   const validRates = data.filter(d=>d.profitRate!==null);
   const avgRate = validRates.length ? validRates.reduce((s,d)=>s+d.profitRate,0)/validRates.length : null;
 
+  const det = _showMonthDetail; // 詳細列（平均利益単価・平均売単価・平均仕入単価）を出すか
+  const yen = v => '¥'+fmt(Math.round(v));
+  // 詳細列セル（月別）
+  const detCells = d => det ? `
+      <td>${d.soldCount?yen(d.profit/d.soldCount):'-'}</td>
+      <td>${d.soldCount?yen(d.sales/d.soldCount):'-'}</td>
+      <td>${d.boughtCount?yen(d.purchase/d.boughtCount):'-'}</td>` : '';
+  const emptyDet = det ? '<td>-</td><td>-</td><td>-</td>' : '';
+
   const rows = data.map((d,i) => {
     const hasData = d.sales || d.soldCount;
     if (!hasData) return `<tr style="color:var(--gray-300)">
       <td style="font-weight:600">${i+1}月</td>
-      <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+      <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>${emptyDet}
     </tr>`;
     return `<tr>
       <td style="font-weight:600;color:var(--gray-800)">${i+1}月</td>
@@ -1567,15 +1596,28 @@ function renderMonthlyTable(year, items) {
       <td class="${d.profit>=0?'profit-pos':'profit-neg'}">¥${fmt(d.profit)}</td>
       <td>${d.profitRate!==null?d.profitRate.toFixed(1)+'%':'-'}</td>
       <td>${d.soldCount}件</td>
-      <td>${d.boughtCount||'-'}</td>
+      <td>${d.boughtCount||'-'}</td>${detCells(d)}
     </tr>`;
   }).join('');
 
+  const detHead = det ? '<th>平均利益単価</th><th>平均売単価</th><th>平均仕入単価</th>' : '';
+  const totDet = det ? `
+          <td style="font-weight:700">${tot.soldCount?yen(tot.profit/tot.soldCount):'-'}</td>
+          <td style="font-weight:700">${tot.soldCount?yen(tot.sales/tot.soldCount):'-'}</td>
+          <td style="font-weight:700">${tot.boughtCount?yen(tot.purchase/tot.boughtCount):'-'}</td>` : '';
+
   document.getElementById('monthly-table-area').innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--gray-600);cursor:pointer">
+        <input type="checkbox" ${det?'checked':''} onchange="toggleMonthDetail(this.checked)">
+        詳細列（平均利益単価・平均売単価・平均仕入単価）を表示
+      </label>
+    </div>
+    <div style="overflow-x:auto">
     <table class="monthly-table" style="width:100%">
       <thead><tr>
         <th style="text-align:left;width:48px">月</th>
-        <th>売上額</th><th>利益額</th><th>利益率</th><th>取引件数</th><th>仕入個数</th>
+        <th>売上額</th><th>利益額</th><th>利益率</th><th>取引件数</th><th>仕入個数</th>${detHead}
       </tr></thead>
       <tbody>
         ${rows}
@@ -1585,10 +1627,12 @@ function renderMonthlyTable(year, items) {
           <td style="font-weight:700" class="${tot.profit>=0?'profit-pos':'profit-neg'}">¥${fmt(tot.profit)}</td>
           <td style="font-weight:700">${avgRate!==null?avgRate.toFixed(1)+'%':'-'}</td>
           <td style="font-weight:700">${tot.soldCount}件</td>
-          <td style="font-weight:700">${tot.boughtCount}件</td>
+          <td style="font-weight:700">${tot.boughtCount}件</td>${totDet}
         </tr>
       </tbody>
-    </table>`;
+    </table>
+    </div>`;
+  initColResizers('.monthly-table', 'apparel_month_col_widths'); // 列幅ドラッグ調整＋保存
 }
 
 function renderPlatformStats(items) {
