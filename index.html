@@ -3048,6 +3048,7 @@ function submitSell(itemId) {
   saveItems(items);
   closeSellModal();
   toast('✅ 売却を記録しました');
+  sellFilters.q = ''; // 売却したら検索の絞り込みを解除して一覧を元に戻す
   if (currentPage === 'sell') renderSellList(document.getElementById('content'));
   if (currentPage === 'inventory') renderInventoryTable(); // 表だけ描き直してスクロール位置を保つ
   if (currentPage === 'dashboard') renderDashboard(document.getElementById('content'));
