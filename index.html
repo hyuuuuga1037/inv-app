@@ -1297,21 +1297,42 @@ function renderCurrentMonthSummary(items) {
   const lossTotal = lossItems.reduce((s,i) => s + (calcItem(i).profit || 0), 0);
 
   // 🔥 爆益ランキング：当月に売れた商品を利益額の大きい順にトップ5
-  const ranked = sold
-    .map(i => ({ item: i, profit: calcItem(i).profit || 0 }))
-    .sort((a, b) => b.profit - a.profit)
-    .slice(0, 5);
+  // ※まとめ売り（コーデ販売・同一bundleId）は複数点を1商品として合算し、1エントリで扱う
+  const _bundleMap = new Map();
+  const _entries = [];
+  sold.forEach(i => {
+    const p = calcItem(i).profit || 0;
+    if (i.bundleId) {
+      let e = _bundleMap.get(i.bundleId);
+      if (!e) { e = { bundle: true, items: [], profit: 0, sale: 0, platform: i.platform }; _bundleMap.set(i.bundleId, e); _entries.push(e); }
+      e.items.push(i); e.profit += p; e.sale += (i.salePrice || 0);
+    } else {
+      _entries.push({ bundle: false, item: i, profit: p, sale: (i.salePrice || 0), platform: i.platform });
+    }
+  });
+  const ranked = _entries.sort((a, b) => b.profit - a.profit).slice(0, 5);
   const rankHTML = `
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--gray-200)">
       <div style="font-size:13px;font-weight:700;color:var(--gray-700);margin-bottom:10px">🔥 爆益ランキング（${label}・利益トップ5）</div>
       ${ranked.length ? ranked.map((r, idx) => {
         const medal = ['🥇','🥈','🥉','4','5'][idx];
-        const it = r.item, c = calcItem(it);
+        const rate = r.sale ? Math.round(r.profit / r.sale * 100) : '-';
+        let nameHTML, sub;
+        if (r.bundle) {
+          const nos = r.items.map(x => 'No.'+x.no).join('＋');
+          const brands = r.items.map(x => x.brand||'').filter(Boolean).join(' / ');
+          nameHTML = `🧩 まとめ売り ${nos}<span style="color:var(--gray-400);font-weight:400"> ${brands}（${r.items.length}点）</span>`;
+          sub = `${r.platform||'-'}　売値¥${fmt(r.sale)}（合計）　利益率${rate}%`;
+        } else {
+          const it = r.item;
+          nameHTML = `No.${it.no} ${it.brand||''}<span style="color:var(--gray-400);font-weight:400"> ${it.details||''}</span>`;
+          sub = `${it.platform||'-'}　売値¥${fmt(it.salePrice||0)}　利益率${rate}%`;
+        }
         return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--gray-100)">
           <span style="font-size:16px;width:28px;text-align:center;flex:none;color:var(--gray-500);font-weight:700">${medal}</span>
           <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">No.${it.no} ${it.brand||''}<span style="color:var(--gray-400);font-weight:400"> ${it.details||''}</span></div>
-            <div style="font-size:11px;color:var(--gray-400)">${it.platform||'-'}　売値¥${fmt(it.salePrice||0)}　利益率${c.profitRate!=null?Math.round(c.profitRate):'-'}%</div>
+            <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${nameHTML}</div>
+            <div style="font-size:11px;color:var(--gray-400)">${sub}</div>
           </div>
           <div style="font-weight:800;color:var(--success);font-size:15px;white-space:nowrap;flex:none">¥${fmt(r.profit)}</div>
         </div>`;
