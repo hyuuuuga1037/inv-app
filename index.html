@@ -2224,8 +2224,8 @@ function toggleShootRequest(itemId) {
   const idx = items.findIndex(i => i.id === itemId);
   if (idx < 0) return;
   const newVal = !items[idx].shootRequest;
-  items[idx] = { ...items[idx], shootRequest: newVal, _updatedAt: Date.now() };
-  localStorage.setItem(DB_KEY, JSON.stringify(items));
+  items[idx] = { ...items[idx], shootRequest: newVal };
+  saveItems(items); // 在庫本体をクラウドにも反映（依頼ON/OFFが再読込・他端末でも維持される）
   syncShootRequest(items[idx], newVal);
   toast(newVal ? '📷 撮影採寸を依頼しました（外注さんの下書きに反映されます）' : '📷 撮影採寸の依頼を解除しました');
   renderInventoryTable();
