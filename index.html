@@ -475,7 +475,7 @@
     style="padding:5px 10px;border-radius:7px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:#fff;color:#374151">
     <option value="">👤 担当者を変更</option>
     <option value="__self__">自分（手元）</option>
-    <option value="奥村">奥村さん</option>
+    <option value="奥村">奥山さん</option>
     <option value="相川">相川さん</option>
   </select>
   <select id="sel-genre-select" onchange="bulkChangeGenre(this.value)"
@@ -1805,7 +1805,7 @@ function renderInventory(el) {
       <select id="inv-assignee" onchange="invFilters.assignee=this.value;renderInventoryTable()">
         <option value="">全担当者</option>
         <option value="self" ${invFilters.assignee==='self'?'selected':''}>自分</option>
-        <option value="奥村" ${invFilters.assignee==='奥村'?'selected':''}>奥村さん</option>
+        <option value="奥村" ${invFilters.assignee==='奥村'?'selected':''}>奥山さん</option>
         <option value="相川" ${invFilters.assignee==='相川'?'selected':''}>相川さん</option>
       </select>
       <button class="btn btn-outline btn-sm" onclick="exportCSV()">📥 CSV出力</button>
@@ -1860,7 +1860,7 @@ function invCardHTML(item) {
         <span class="lbl">担当</span>
         <select onchange="changeAssignee(${item.id},this.value)" style="padding:4px 6px;border-radius:6px;font-size:12px;border:1px solid var(--gray-200);background:white;font-family:inherit">
           <option value="" ${!item.assignee?'selected':''}>自分</option>
-          <option value="奥村" ${(item.assignee==='奥村'||item.assignee==='A')?'selected':''}>奥村さん</option>
+          <option value="奥村" ${(item.assignee==='奥村'||item.assignee==='A')?'selected':''}>奥山さん</option>
           <option value="相川" ${(item.assignee==='相川'||item.assignee==='B')?'selected':''}>相川さん</option>
         </select>
       </div>
@@ -1993,7 +1993,7 @@ function invRowHTML(item) {
     <td style="font-size:12px;text-align:center">
       <select onchange="changeAssignee(${item.id},this.value)" onclick="event.stopPropagation()" style="padding:3px 6px;border-radius:6px;font-size:11px;border:1px solid var(--gray-200);background:white;cursor:pointer;font-family:inherit">
         <option value="" ${!item.assignee?'selected':''}>自分</option>
-        <option value="奥村" ${(item.assignee==='奥村'||item.assignee==='A')?'selected':''}>奥村さん</option>
+        <option value="奥村" ${(item.assignee==='奥村'||item.assignee==='A')?'selected':''}>奥山さん</option>
         <option value="相川" ${(item.assignee==='相川'||item.assignee==='B')?'selected':''}>相川さん</option>
       </select>
       ${shootReqBtnHTML(item, 'event.stopPropagation();')}
@@ -2157,7 +2157,7 @@ function renderAdd(el) {
           <label>担当者</label>
           <select id="a-assignee">
             <option value="">自分（手元）</option>
-            <option value="奥村">奥村さん</option>
+            <option value="奥村">奥山さん</option>
             <option value="相川">相川さん</option>
           </select>
         </div>
@@ -2203,7 +2203,7 @@ function changeAssignee(itemId, value) {
   items[idx] = { ...items[idx], assignee: value, _updatedAt: Date.now() };
   saveItems(items); // 在庫本体にも担当者を反映（外注アプリが古い担当を参照しないように）
   syncAssignee(itemId, value); // 専用コレクションにも書き込み
-  const label = value === '奥村' ? '奥村さん' : value === '相川' ? '相川さん' : '自分（手元）';
+  const label = value === '奥村' ? '奥山さん' : value === '相川' ? '相川さん' : '自分（手元）';
   toast(`👤 担当者を「${label}」に変更しました`);
 }
 
@@ -2213,8 +2213,8 @@ function shootReqBtnHTML(item, extraAttr) {
     return `<button onclick="${extraAttr||''}toggleShootRequest(${item.id})" style="margin-top:4px;padding:3px 8px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid var(--gray-200);background:white;color:var(--gray-500)">📷 依頼する</button>`;
   }
   const a = item.assignee || '';
-  const who = (a==='奥村'||a==='A') ? '奥村' : (a==='相川'||a==='B') ? '相川' : '自分';
-  const color = who==='奥村' ? '#10B981' : who==='相川' ? '#F59E0B' : 'var(--primary)';
+  const who = (a==='奥村'||a==='A') ? '奥山' : (a==='相川'||a==='B') ? '相川' : '自分';
+  const color = who==='奥山' ? '#10B981' : who==='相川' ? '#F59E0B' : 'var(--primary)';
   return `<button onclick="${extraAttr||''}toggleShootRequest(${item.id})" title="撮影採寸の依頼を解除" style="margin-top:4px;padding:3px 8px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid ${color};background:${color};color:white">📷 依頼中・${who}</button>`;
 }
 
@@ -2267,20 +2267,10 @@ function syncShootRequest(item, enabled) {
       }
     }).catch(e => console.error('採寸依頼の下書き確認エラー:', e));
   } else {
-    // 依頼解除：自動作成されただけで中身が空の下書きは削除する（誤って依頼した時の後片付け）。
-    // 外注さんが採寸データ等を入力済みの下書きは消さない（作業内容を守るため）。
-    ref.get().then(snap => {
-      if (!snap.exists) return;
-      const d = snap.data() || {};
-      const m = d.measures || {};
-      const hasMeasureData = Object.keys(m).some(k => {
-        const v = m[k];
-        return v !== '' && v !== 0 && v !== null && v !== undefined && v !== false;
-      });
-      // 依頼で自動作成された下書き & 採寸・状態・アピール・生成文が未入力 → 空とみなして削除
-      const untouched = d.fromRequest && !hasMeasureData && !d.cond && !d.ship && !d.appeal && !d.genText;
-      if (untouched) ref.delete().catch(e => console.error('依頼解除時の下書き削除エラー:', e));
-    }).catch(e => console.error('依頼解除の下書き確認エラー:', e));
+    // 依頼解除：外注アプリの下書きを削除し、外注さんの採寸リストから消す。
+    // 外注さんが入力した採寸内容は drafts_history にバックアップが残るため、
+    // 外注アプリの「下書き履歴」からいつでも復元できる（作業内容は失われない）。
+    ref.delete().catch(e => console.error('依頼解除時の下書き削除エラー:', e));
   }
 }
 
@@ -2289,7 +2279,7 @@ function bulkAssignAssignee(value) {
   if (sel) setTimeout(() => { sel.value = ''; }, 300);
   if (!value || selectedItems.size === 0) return;
   const assigneeValue = value === '__self__' ? '' : value;
-  const label = assigneeValue === '奥村' ? '奥村さん' : assigneeValue === '相川' ? '相川さん' : '自分（手元）';
+  const label = assigneeValue === '奥村' ? '奥山さん' : assigneeValue === '相川' ? '相川さん' : '自分（手元）';
   if (!confirm(`選択した ${selectedItems.size} 件の担当者を「${label}」に変更しますか？`)) return;
   const now = Date.now();
   const items = getItems();
@@ -2512,7 +2502,7 @@ function renderSellTable() {
       (i.details||'').toLowerCase().includes(q)
     );
   }
-  const assigneeLabel = a => (a==='奥村'||a==='A') ? '奥村さん' : (a==='相川'||a==='B') ? '相川さん' : '自分';
+  const assigneeLabel = a => (a==='奥村'||a==='A') ? '奥山さん' : (a==='相川'||a==='B') ? '相川さん' : '自分';
   if (!items.length) {
     area.innerHTML = '<div class="empty"><div class="empty-icon">🎉</div><p>該当する商品がありません</p></div>';
     return;
@@ -3168,7 +3158,7 @@ function openEditModal(itemId) {
         <label>担当者</label>
         <select id="e-assignee">
           <option value="" ${!item.assignee?'selected':''}>自分（手元）</option>
-          <option value="奥村" ${(item.assignee==='奥村'||item.assignee==='A')?'selected':''}>奥村さん</option>
+          <option value="奥村" ${(item.assignee==='奥村'||item.assignee==='A')?'selected':''}>奥山さん</option>
           <option value="相川" ${(item.assignee==='相川'||item.assignee==='B')?'selected':''}>相川さん</option>
         </select>
       </div>
