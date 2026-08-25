@@ -1137,11 +1137,11 @@ function renderPage(page) {
 let _dashYears = [];
 let _dashActiveYear = '';
 let _summaryYear = null;
-let _listedTopCollapsed = false; // 出品中トップの折りたたみ状態
-let _listedTopShowAll = false;   // false=トップ10 / true=トップ20
+let _listedTopCollapsed = true; // 出品中トップの折りたたみ状態（デフォルト非表示）
+let _listedTopShowAll = false;   // false=トップ5 / true=トップ20
 function toggleListedTopCollapse() { _listedTopCollapsed = !_listedTopCollapsed; renderDashboard(document.getElementById('content')); }
 function toggleListedTopShowAll() { _listedTopShowAll = !_listedTopShowAll; renderDashboard(document.getElementById('content')); }
-let _rankCollapsed = false;  // 爆益ランキングの折りたたみ状態
+let _rankCollapsed = true;  // 爆益ランキングの折りたたみ状態（デフォルト非表示）
 let _rankShowAll = false;    // false=トップ5 / true=トップ10
 function toggleRankCollapse() { _rankCollapsed = !_rankCollapsed; renderCurrentMonthSummary(getItems()); }
 function toggleRankShowAll() { _rankShowAll = !_rankShowAll; renderCurrentMonthSummary(getItems()); }
@@ -1171,7 +1171,7 @@ function renderDashboard(el) {
   const listedSorted = inStockItems
     .filter(i => (i.status || 'unlisted') === 'listed')
     .sort((a,b) => (b.purchasePrice || 0) - (a.purchasePrice || 0));
-  const listedShown = listedSorted.slice(0, _listedTopShowAll ? 20 : 10);
+  const listedShown = listedSorted.slice(0, _listedTopShowAll ? 20 : 5);
   const rowHTML = (it, idx) => {
     const days = daysSince(it.purchaseDate);
     return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--gray-100)">
@@ -1186,13 +1186,13 @@ function renderDashboard(el) {
   const listedTop10HTML = `
     <div class="card" style="margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-        <div class="card-title" style="margin-bottom:0">🏷️ 出品中・仕入れ額トップ${_listedTopShowAll?'20':'10'}（早く売りたい高額在庫）</div>
+        <div class="card-title" style="margin-bottom:0">🏷️ 出品中・仕入れ額トップ${_listedTopShowAll?'20':'5'}（早く売りたい高額在庫）</div>
         <button onclick="toggleListedTopCollapse()" title="${_listedTopCollapsed?'表示':'非表示'}" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--gray-200);background:#fff;cursor:pointer;font-size:16px;font-weight:700;color:var(--gray-500);line-height:1;flex:none">${_listedTopCollapsed?'＋':'−'}</button>
       </div>
       ${_listedTopCollapsed ? '' : `
       <div style="margin-top:12px">
         ${listedShown.length ? listedShown.map(rowHTML).join('') : '<div style="font-size:12px;color:var(--gray-400);padding:4px 0">出品中の商品がありません</div>'}
-        ${listedSorted.length > 10 ? `<div style="text-align:center;margin-top:10px"><button onclick="toggleListedTopShowAll()" style="padding:5px 14px;border-radius:7px;border:1px solid var(--gray-200);background:#fff;cursor:pointer;font-size:12px;font-weight:700;color:var(--primary)">${_listedTopShowAll?'▲ トップ10だけ表示':'▼ 11〜20位も表示'}</button></div>` : ''}
+        ${listedSorted.length > 5 ? `<div style="text-align:center;margin-top:10px"><button onclick="toggleListedTopShowAll()" style="padding:5px 14px;border-radius:7px;border:1px solid var(--gray-200);background:#fff;cursor:pointer;font-size:12px;font-weight:700;color:var(--primary)">${_listedTopShowAll?'▲ トップ5だけ表示':'▼ 6〜20位も表示'}</button></div>` : ''}
       </div>`}
     </div>`;
 
