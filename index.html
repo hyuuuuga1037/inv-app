@@ -2212,7 +2212,8 @@ function changeAssignee(itemId, value) {
   const items = getItems();
   const idx = items.findIndex(i => i.id === itemId);
   if (idx < 0) return;
-  items[idx] = { ...items[idx], assignee: value, _updatedAt: Date.now() };
+  // 担当者変更は撮影依頼フラグに絶対に触れない（元の値を明示的に保持）
+  items[idx] = { ...items[idx], assignee: value, shootRequest: items[idx].shootRequest, _updatedAt: Date.now() };
   saveItems(items); // 在庫本体にも担当者を反映（外注アプリが古い担当を参照しないように）
   syncAssignee(itemId, value); // 専用コレクションにも書き込み
   const label = value === '奥村' ? '奥山さん' : value === '相川' ? '相川さん' : '自分（手元）';
@@ -2296,7 +2297,7 @@ function bulkAssignAssignee(value) {
   const now = Date.now();
   const items = getItems();
   items.forEach((item, idx) => {
-    if (selectedItems.has(item.id)) items[idx] = { ...item, assignee: assigneeValue, _updatedAt: now };
+    if (selectedItems.has(item.id)) items[idx] = { ...item, assignee: assigneeValue, shootRequest: item.shootRequest, _updatedAt: now };
   });
   saveItems(items); // 在庫本体にも担当者を反映（外注アプリが古い担当を参照しないように）
   // 専用コレクションにも書き込み
