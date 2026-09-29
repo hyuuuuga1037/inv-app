@@ -175,6 +175,16 @@
   .col-resizer:hover, .col-resizer.dragging { background: var(--primary); opacity: .35; }
   tbody tr:hover { background: var(--gray-50); }
   tbody tr:last-child td { border-bottom: none; }
+  /* 操作ボタン列を右端に固定：横スクロールでも「削除」等が常に見えて押せるように */
+  .inv-table th:last-child, .inv-table td:last-child {
+    position: sticky; right: 0; z-index: 5; background: #fff;
+    box-shadow: -6px 0 6px -6px rgba(0,0,0,.18);
+  }
+  .inv-table thead th:last-child { z-index: 12; background: var(--gray-50); }
+  .inv-table tbody tr:hover td:last-child { background: var(--gray-50); }
+  @media (max-width: 768px) {
+    .inv-table th:last-child, .inv-table td:last-child { position: static; box-shadow: none; }
+  }
 
   /* Badges */
   .badge {
@@ -2244,7 +2254,7 @@ function toggleShootRequest(itemId) {
   renderInventoryTable();
 }
 
-const SHOOT_GENRE_MAP = { 'スーツ':'suit','レディーススーツ':'suit','靴':'shoes','バッグ':'bag','ジャージ':'jersey','洋服':'tops','デニム':'pants','その他':'tops' };
+const SHOOT_GENRE_MAP = { 'スーツ':'suit','レディーススーツ':'suit','靴':'shoes','バッグ':'bag','ジャージ':'jersey','洋服':'tops','デニム':'pants','アウター':'outer','その他':'tops' };
 
 function syncShootRequest(item, enabled) {
   if (!_db) return;
