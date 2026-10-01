@@ -670,6 +670,24 @@ let _shippingCosts = {}; // 郵送料（月別、手動入力）
 let _extraCharges = [];  // 特別費用（研修費など、gaityuu-appのextra_chargesを参照）
 let _targets = {};       // 月別・ジャンル別の利益目標 { 'YYYY-MM': { genre: amount, _total: amount } }
 
+function recalcGoalSum(){
+  var el=document.getElementById('goal-sum-indicator');
+  if(!el) return;
+  var sum=0;
+  document.querySelectorAll('.genre-target-input').forEach(function(i){ sum += Number(i.value)||0; });
+  var totalEl=document.getElementById('total-target-input');
+  var total=Number(totalEl&&totalEl.value)||0;
+  if(total===0 && sum===0){ el.style.display='none'; return; }
+  el.style.display='';
+  var diff=sum-total;
+  var y=function(n){ return '¥'+(Number(n)||0).toLocaleString(); };
+  var msg,color,bg;
+  if(diff===0){ msg='✅ ジャンル別合計 '+y(sum)+' ＝ 全体目標 '+y(total)+'（一致）'; color='#065F46'; bg='#D1FAE5'; }
+  else if(diff>0){ msg='⚠️ ジャンル別合計 '+y(sum)+' が全体目標 '+y(total)+' より '+y(diff)+' 多い'; color='#92400E'; bg='#FEF3C7'; }
+  else{ msg='⚠️ ジャンル別合計 '+y(sum)+' が全体目標 '+y(total)+' より '+y(-diff)+' 少ない'; color='#92400E'; bg='#FEF3C7'; }
+  el.textContent=msg;
+  el.style.cssText='margin:-6px 0 16px;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:700;text-align:center;color:'+color+';background:'+bg;
+}
 function getTarget(month, key) { return (_targets[month] && _targets[month][key]) || 0; }
 function saveTarget(month, key, value) {
   if (!_db) return;
@@ -1591,7 +1609,7 @@ function renderGenreStats(items) {
     '<div style="background:var(--primary-light);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">'
     + '<div><div style="font-size:12px;color:var(--gray-500)">全体の利益目標（'+monthLabel+'）</div>'
     + '<div style="display:flex;align-items:center;gap:6px;margin-top:2px"><span style="font-size:14px;color:var(--gray-500)">¥</span>'
-    + '<input type="number" value="'+(totalTarget||'')+'" placeholder="0" min="0" step="1000" onchange="saveTarget(\''+month+'\',\'_total\',this.value)" style="width:120px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:6px;font-size:15px;font-family:inherit"></div></div>'
+    + '<input type="number" id="total-target-input" oninput="recalcGoalSum()" value="'+(totalTarget||'')+'" placeholder="0" min="0" step="1000" onchange="saveTarget(\''+month+'\',\'_total\',this.value)" style="width:120px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:6px;font-size:15px;font-family:inherit"></div></div>'
     + '<div style="text-align:right"><div style="font-size:12px;color:var(--gray-500)">利益実績 ¥'+fmt(totalProfit)+'</div>'
     + '<div style="font-size:24px;font-weight:800;color:'+achColor(totalPct)+'">'+(totalPct==null?'目標未設定':'達成率 '+totalPct+'%')+'</div></div></div>';
 
@@ -1604,13 +1622,15 @@ function renderGenreStats(items) {
       + '<div style="font-size:18px;font-weight:700;color:var(--success)">¥'+fmt(s.profit)+'</div>'
       + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px">利益（売上¥'+fmt(s.sales)+' / '+s.count+'件）</div>'
       + '<div style="display:flex;align-items:center;gap:4px"><span style="font-size:11px;color:var(--gray-400)">🎯</span>'
-      + '<input type="number" value="'+(s.target||'')+'" placeholder="目標" min="0" step="1000" onchange="saveTarget(\''+month+'\',\''+s.g+'\',this.value)" style="width:80px;padding:3px 6px;border:1px solid var(--gray-300);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+      + '<input type="number" class="genre-target-input" oninput="recalcGoalSum()" value="'+(s.target||'')+'" placeholder="目標" min="0" step="1000" onchange="saveTarget(\''+month+'\',\''+s.g+'\',this.value)" style="width:80px;padding:3px 6px;border:1px solid var(--gray-300);border-radius:6px;font-size:12px;font-family:inherit"></div>'
       + '<div style="font-size:16px;font-weight:700;margin-top:4px;color:'+achColor(pct)+'">'+(pct==null?'—':pct+'%')+'</div></div>';
   }).join('');
 
   area.innerHTML = totalBlock
+    + '<div id="goal-sum-indicator"></div>'
     + (pie ? '<div style="display:flex;justify-content:center;margin-bottom:20px">'+pie+'</div>' : '')
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">' + cards + '</div>';
+  recalcGoalSum();
 }
 
 function switchYear(year) {
