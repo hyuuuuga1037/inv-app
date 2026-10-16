@@ -1078,7 +1078,7 @@ const DEFAULT_SETTINGS = {
     'セカンドストリート', 'オフハウス', 'トレジャーファクトリー',
     'ベクトルパーク', 'エコリング', 'ユーズレット', 'ゾゾタウン', 'メルカリ'
   ],
-  platforms: ['メルカリ', 'ヤフーフリマ', 'ラクマ', 'ヤフオク'],
+  platforms: ['メルカリ', 'ヤフーフリマ', 'ラクマ', 'ヤフオク', '廃棄'],
   genres: ['スーツ', 'レディーススーツ', '洋服', 'デニム', 'ジャージ', '靴', 'バッグ', 'アクセサリー', 'その他'],
   shippingMethods: ['ゆうパック60', 'ゆうパック80', 'ゆうパック100', '宅急便60', '宅急便80', '宅急便100', 'らくらくメルカリ便', 'ゆうゆうメルカリ便', 'その他']
 };
@@ -1089,7 +1089,11 @@ function getSettings() {
   const saved = JSON.parse(s);
   return {
     purchaseSources: saved.purchaseSources || DEFAULT_SETTINGS.purchaseSources,
-    platforms: saved.platforms || DEFAULT_SETTINGS.platforms,
+    platforms: (function() {
+      let p = saved.platforms || DEFAULT_SETTINGS.platforms;
+      if (!p.includes('廃棄')) p = [...p, '廃棄']; // 損切り（売れずに処分）用
+      return p;
+    })(),
     genres: (function() {
       let g = saved.genres || DEFAULT_SETTINGS.genres;
       if (!g.includes('ジャージ')) g = [...g.slice(0, 3), 'ジャージ', ...g.slice(3)];
@@ -1111,6 +1115,11 @@ function nextNo() {
 }
 
 function calcItem(item) {
+  // 廃棄（損切り）：売値0円、仕入値＋取下げ費用をそのままマイナス計上
+  if (item.platform === '廃棄') {
+    const tc = (item.purchasePrice || 0) + (item.extraCost || 0);
+    return { ...item, totalCost: tc, profit: -tc, profitRate: null };
+  }
   if (!item.salePrice) return { ...item, totalCost: (item.purchasePrice || 0) + (item.extraCost || 0), profit: null, profitRate: null };
   const tc = (item.purchasePrice || 0) + (item.extraCost || 0) + (item.commission || 0) + (item.shippingCost || 0) + (item.boxCost || 0);
   const profit = (item.salePrice || 0) - tc;
@@ -3117,7 +3126,7 @@ function submitSell(itemId) {
   const platform = document.getElementById('s-platform').value;
   const saleDate = document.getElementById('s-date').value;
   const salePrice = parseInt(document.getElementById('s-price').value)||0;
-  if (!platform || !saleDate || !salePrice) { toast('⚠️ 必須項目を入力してください'); return; }
+  if (!platform || !saleDate || (!salePrice && platform !== '廃棄')) { toast('⚠️ 必須項目を入力してください'); return; }
 
   const items = getItems();
   const idx = items.findIndex(i=>i.id===itemId);
@@ -3138,6 +3147,7 @@ function submitSell(itemId) {
     workerNote: (document.getElementById('s-worker-note')?.value || '').trim(),
     _updatedAt: Date.now()
   };
+  if (platform === '廃棄') Object.assign(items[idx], { salePrice: 0, commissionRate: 0, commission: 0, shippingCost: 0, shippingAdj: 0, boxCost: 0 });
   saveItems(items);
   closeSellModal();
   toast('✅ 売却を記録しました');
