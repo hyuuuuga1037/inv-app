@@ -3243,6 +3243,12 @@ function openEditModal(itemId) {
         <label>手数料</label>
         <input type="number" id="e-commission" value="${item.commission||0}">
       </div>
+      <div class="form-group" style="grid-column:span 2">
+        <label>配送方法</label>
+        <select id="e-shipping-method" ${item.buyerPaysShipping?'':`onchange="onShippingMethodChange('e', ${item.purchasePrice||0})"`}>
+          ${shippingSelectOptions(item.shippingMethod||'')}
+        </select>
+      </div>
       <div class="form-group">
         <label>送料</label>
         <input type="number" id="e-shipping" value="${item.shippingCost||0}">
@@ -3314,6 +3320,7 @@ function submitEdit(itemId) {
       saleDate: document.getElementById('e-saledate')?.value,
       salePrice: parseInt(document.getElementById('e-saleprice')?.value)||0,
       commission: parseInt(document.getElementById('e-commission')?.value)||0,
+      shippingMethod: document.getElementById('e-shipping-method')?.value || item.shippingMethod || null,
       shippingCost: parseInt(document.getElementById('e-shipping')?.value)||0,
       boxCost: parseInt(document.getElementById('e-box')?.value)||0,
     } : {
