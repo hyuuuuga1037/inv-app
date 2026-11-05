@@ -365,6 +365,7 @@
   .bundle-calc-row { display: flex; justify-content: space-between; padding: 3px 0; }
   .bundle-calc-row.total { border-top: 1px solid var(--gray-200); margin-top: 6px; padding-top: 8px; font-weight: 700; }
 </style>
+<style>/* 数値欄の上下矢印を出さない（直接入力のみ） */input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}input[type=number]{-moz-appearance:textfield;appearance:textfield}</style>
 </head>
 <body>
 <div id="app">
@@ -1057,6 +1058,11 @@ function initFirebase() {
       _extraCharges = snap.docs.map(d => d.data());
       if (currentPage === 'dashboard') renderCurrentMonthSummary(getItems());
     }, () => {});
+    // 登録リスト（仕入れ先・販売先・ジャンル・配送方法）を端末間で同期
+    _db.collection('settings').doc('app_lists').onSnapshot(snap => {
+      _applyCloudLists(snap.exists ? snap.data() : {});
+      if (currentPage === 'settings') renderSettings(document.getElementById('content'));
+    }, () => {});
     // 利益目標（月別・ジャンル別）
     _db.collection('settings').doc('targets').onSnapshot(snap => {
       _targets = snap.exists ? snap.data() : {};
@@ -1106,7 +1112,38 @@ function getSettings() {
     shippingMethods: saved.shippingMethods || DEFAULT_SETTINGS.shippingMethods
   };
 }
-function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+// 登録リスト（仕入れ先・販売先・ジャンル・配送方法）は端末間で共有する（Firestore settings/app_lists）
+const LIST_KEYS = ['purchaseSources', 'platforms', 'genres', 'shippingMethods'];
+const LISTS_SYNCED_KEY = 'apparel_settings_cloud_synced';
+function _pushSettingsLists(s) {
+  if (typeof _db === 'undefined' || !_db) return;
+  const doc = {};
+  LIST_KEYS.forEach(k => { if (Array.isArray(s[k])) doc[k] = s[k]; });
+  _db.collection('settings').doc('app_lists').set(doc).catch(e => console.error('登録リスト保存エラー:', e));
+}
+function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); _pushSettingsLists(s); }
+// クラウドの登録リストをこの端末に反映。初回だけは端末の分も合わせて1つにする（どちらかにしか無い店舗を消さない）
+function _applyCloudLists(cloud) {
+  const local = getSettings();
+  const merged = { ...local };
+  const firstSync = !localStorage.getItem(LISTS_SYNCED_KEY);
+  let needPush = false;
+  LIST_KEYS.forEach(k => {
+    const c = Array.isArray(cloud[k]) ? cloud[k] : null;
+    if (!c) { needPush = true; return; }
+    if (firstSync) {
+      const add = (local[k] || []).filter(v => !c.includes(v));
+      merged[k] = [...c, ...add];
+      if (add.length) needPush = true;
+    } else {
+      merged[k] = c;
+    }
+  });
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
+  localStorage.setItem(LISTS_SYNCED_KEY, '1');
+  if (needPush) _pushSettingsLists(merged);
+  return merged;
+}
 
 function nextNo() {
   const items = getItems();
@@ -3794,6 +3831,13 @@ initFirebase();          // その後Firebaseで同期（非同期・失敗し�
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations().then(regs=>regs.forEach(r=>r.unregister()));
 }
+</script>
+<script>
+// 数値欄の上でマウスホイールを回しても値が変わらないようにする（スクロールの拍子に価格・採寸値がずれるのを防ぐ）
+document.addEventListener('wheel', function(e) {
+  var el = document.activeElement;
+  if (el && el.type === 'number' && el === e.target) el.blur();
+}, { passive: true });
 </script>
 </body>
 </html>
